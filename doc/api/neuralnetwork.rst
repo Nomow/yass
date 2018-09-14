@@ -4,12 +4,12 @@ Neural network
 Neural Network Detector
 -----------------------
 
-.. autoclass:: yass.neuralnetwork.NeuralNetDetector
+.. autoclass:: yass.detect.nnet.NeuralNetDetector
     :members:
 
 
 Neural Network Triage
 ---------------------
 
-.. autoclass:: yass.neuralnetwork.NeuralNetTriage
+.. autoclass:: yass.detect.nnet.NeuralNetTriage
     :members:

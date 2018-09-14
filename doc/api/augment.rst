@@ -1,5 +1,5 @@
 Augment
 =======
 
-.. automodule:: yass.augment.make
+.. automodule:: yass.spikes.augment
     :members:
