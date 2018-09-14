@@ -35,7 +35,7 @@ performance-test: ## Run performance tests
 
 
 integration-test: ## Run Integration Tests
-	bash integration-test/integration-test.sh
+	./scripts/integration_tests
 
 docs: ## Build docs
 	make -C doc html
