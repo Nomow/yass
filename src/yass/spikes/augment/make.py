@@ -7,7 +7,7 @@ import logging
 from yass.templates import TemplatesProcessor
 from yass.augment.noise import noise_cov
 from yass.augment import util
-import yass.array as yarr
+import yass.spikes.array as yarr
 from yass.geometry import order_channels_by_distance
 from yass.batch import RecordingsReader
 

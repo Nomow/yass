@@ -4,7 +4,7 @@ import random
 import numpy as np
 import logging
 
-import yass.array as yarr
+from yass.spikes.array import ArrayWithMetadata
 from yass import util
 
 
@@ -226,7 +226,7 @@ def make_collided(x, n_per_spike, multi_channel, min_shift,
                         shift=shifts,
                         params=params)
 
-        return yarr.ArrayWithMetadata(x_first, metadata)
+        return ArrayWithMetadata(x_first, metadata)
     else:
         return x_first
 
@@ -343,22 +343,3 @@ def add_noise(x, spatial_SIG, temporal_SIG):
     """
     noise = make_noise(x.shape[0], spatial_SIG, temporal_SIG)
     return x + noise
-
-
-class ArrayWithMetadata:
-    """Wrapper to store metadata in numpy.ndarray, see the metadata attribute
-    """
-
-    def __init__(self, array, metadata):
-        self.array = array
-        self._metadata = metadata
-
-    @property
-    def metadata(self):
-        return self._metadata
-
-    def __getattr__(self, name):
-        return getattr(self.array, name)
-
-    def __getitem__(self, key):
-        return self.array[key]
