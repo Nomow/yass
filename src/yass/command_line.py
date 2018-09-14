@@ -2,8 +2,7 @@
 Command line utility:
 
 Spike sorting `yass sort`
-Neural network training `yass train`
-Phy integration `yass export`
+Phy integration `yass export` (implentation not finished)
 """
 
 import os

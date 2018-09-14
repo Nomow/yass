@@ -1,5 +1,6 @@
 """
-Built-in pipeline
+The :mod:`yass.pipeline` module implements the default YASS pipeline,
+customized pipelines can be implemented by following this as a guideline
 """
 import logging
 import time

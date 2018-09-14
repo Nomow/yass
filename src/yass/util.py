@@ -1,5 +1,6 @@
 """
-Utility functions
+The :mod:`yass.util` module implements utility functions used
+accross modules
 """
 try:
     from pathlib2 import Path

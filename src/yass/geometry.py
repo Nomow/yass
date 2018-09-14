@@ -1,7 +1,6 @@
 """
-Functions for parsing geometry data
+The :mod:`yass.geometry` module implements functions for parsing geometry files
 """
-import logging
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 
