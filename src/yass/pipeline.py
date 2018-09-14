@@ -30,7 +30,7 @@ from yass.detect import nnet
 from yass.util import (load_yaml, save_metadata, load_logging_config_file,
                        human_readable_time)
 from yass.explore import RecordingExplorer
-from yass.threshold import dimensionality_reduction as dim_red
+from yass.detect.threshold import dimensionality_reduction as dim_red
 
 
 def run(config, logger_level='INFO', clean=False, output_dir='tmp/',
