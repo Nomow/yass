@@ -13,9 +13,9 @@ import tensorflow as tf
 
 from yass import read_config
 from yass.batch import BatchProcessor
-from yass.threshold import detect
 from yass.neuralnetwork import NeuralNetDetector, AutoEncoder, KerasModel
 from yass.neuralnetwork.apply import post_processing, fix_indexes_spike_index
+from yass.detect.util import remove_incomplete_waveforms
 from yass.geometry import n_steps_neigh_channels
 from yass.util import running_on_gpu
 
@@ -129,14 +129,14 @@ def run(standarized_path, standarized_params, whiten_filter, if_file_exists,
         # get clear spikes
         logger.info('Removing clear indexes outside the allowed range to '
                     'draw a complete waveform...')
-        clear, idx = detect.remove_incomplete_waveforms(
+        clear, idx = remove_incomplete_waveforms(
             clear, CONFIG.spike_size + CONFIG.templates.max_shift,
             bp.reader._n_observations)
 
         # get all spikes
         logger.info('Removing indexes outside the allowed range to '
                     'draw a complete waveform...')
-        spikes_all, _ = detect.remove_incomplete_waveforms(
+        spikes_all, _ = remove_incomplete_waveforms(
             spikes_all, CONFIG.spike_size + CONFIG.templates.max_shift,
             bp.reader._n_observations)
 

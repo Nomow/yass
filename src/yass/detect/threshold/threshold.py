@@ -9,8 +9,8 @@ except ImportError:
 import numpy as np
 
 from yass import read_config
-from yass.threshold.detect import threshold
-from yass.threshold.dimensionality_reduction import pca
+from yass.detect.threshold.detect import threshold
+from yass.detect.threshold.dimensionality_reduction import pca
 from yass.preprocess.batch import whiten
 from yass.util import save_numpy_object
 
