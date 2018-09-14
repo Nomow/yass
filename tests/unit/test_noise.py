@@ -1,6 +1,6 @@
 import numpy as np
 
-from yass.augment import noise
+from yass.spikes.augment import noise
 from yass.batch import RecordingsReader
 
 

@@ -17,7 +17,7 @@ def setup():
 
 @pytest.fixture
 def patch_triage_network(monkeypatch):
-    to_patch = 'yass.neuralnetwork.model.KerasModel.predict_with_threshold'
+    to_patch = 'yass.detect.nnet.model.KerasModel.predict_with_threshold'
     monkeypatch.setattr(to_patch, dummy_predict_with_threshold)
 
     yield
