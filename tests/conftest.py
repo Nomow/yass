@@ -25,6 +25,7 @@ def patch_triage_network(monkeypatch):
 
 @pytest.fixture()
 def data_info():
+    # FIXME: should use data from the config files instead of this...
     d = dict()
 
     d['spike_size_ms'] = 1.5

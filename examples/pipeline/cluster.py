@@ -12,7 +12,7 @@ np.random.seed(0)
 logging.basicConfig(level=logging.INFO)
 
 # set yass configuration parameters
-yass.set_config('config_sample.yaml', 'preprocess-example/')
+yass.set_config('config.yaml', 'example-cluster')
 
 standarized_path, standarized_params, whiten_filter = preprocess.run()
 
