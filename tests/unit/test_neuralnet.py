@@ -10,11 +10,11 @@ import yaml
 
 import yass
 from yass.batch import BatchProcessor
-from yass import nnet
+from yass.detect import nnet
 from yass.detect.nnet import NeuralNetDetector, KerasModel, AutoEncoder
 from yass.detect.nnet.apply import post_processing
 from yass.geometry import make_channel_index, n_steps_neigh_channels
-from yass.augment import make
+from yass.spikes.augment import make
 from yass.explore import RecordingExplorer
 
 
