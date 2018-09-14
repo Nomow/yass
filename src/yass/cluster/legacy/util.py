@@ -1,7 +1,7 @@
 import numpy as np
 import logging
 
-from yass import mfm
+from yass.cluster import mfm
 from scipy.sparse import lil_matrix
 
 
