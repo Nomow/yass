@@ -4,7 +4,6 @@ from yass.geometry import (parse, find_channel_neighbors,
                            n_steps_neigh_channels,
                            make_channel_index)
 from yass.preprocess.batch import whiten
-from yass.threshold import detect
 
 
 def test_can_load_npy(path_to_npy_geometry):
@@ -45,12 +44,6 @@ def test_can_compute_n_steps_neighbors(data_info, path_to_geometry):
     geometry = parse(path_to_geometry, data_info['n_channels'])
     neighbors = find_channel_neighbors(geometry, radius=70)
     n_steps_neigh_channels(neighbors, steps=2)
-
-
-def test_can_use_threshold_detector(data, data_info, path_to_geometry):
-    geometry = parse(path_to_geometry, data_info['n_channels'])
-    neighbors = find_channel_neighbors(geometry, radius=70)
-    detect._threshold(data, neighbors, data_info['spike_size'], 5)
 
 
 def test_can_compute_whiten_matrix(data, data_info, path_to_geometry):
