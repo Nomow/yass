@@ -4,7 +4,7 @@ Functions for evaluating models
 import pandas as pd
 import numpy as np
 
-from yass.augment.make import spikes
+from yass.spikes.augment.make import spikes
 from yass.util import ensure_iterator
 from yass.templates.util import amplitudes as compute_amplitudes
 from yass.templates.util import ptps as compute_ptps
