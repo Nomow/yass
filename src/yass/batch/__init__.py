@@ -1,3 +1,8 @@
+"""
+The :mod:`yass.batch` module implements utilities for performing operations in
+large datasets using batch processing
+"""
+
 from yass.batch.batch import BatchProcessor
 from yass.batch.reader import RecordingsReader, BinaryReader, MemoryMap
 from yass.batch.generator import IndexGenerator

@@ -10,9 +10,9 @@ import yaml
 
 import yass
 from yass.batch import BatchProcessor
-from yass import neuralnetwork
-from yass.neuralnetwork import NeuralNetDetector, KerasModel, AutoEncoder
-from yass.neuralnetwork.apply import post_processing
+from yass import nnet
+from yass.detect.nnet import NeuralNetDetector, KerasModel, AutoEncoder
+from yass.detect.nnet.apply import post_processing
 from yass.geometry import make_channel_index, n_steps_neigh_channels
 from yass.augment import make
 from yass.explore import RecordingExplorer
@@ -185,7 +185,7 @@ def test_can_use_neural_network_detector(path_to_config,
                         buffer_size=CONFIG.spike_size)
 
     out = ('spike_index', 'waveform')
-    fn = neuralnetwork.apply.fix_indexes_spike_index
+    fn = nnet.apply.fix_indexes_spike_index
 
     # detector
     with tf.Session() as sess:
@@ -250,7 +250,7 @@ def test_splitting_in_batches_does_not_affect(path_to_config,
                         buffer_size=CONFIG.spike_size)
 
     out = ('spike_index', 'waveform')
-    fn = neuralnetwork.apply.fix_indexes_spike_index
+    fn = nnet.apply.fix_indexes_spike_index
 
     # detector
     with tf.Session() as sess:
