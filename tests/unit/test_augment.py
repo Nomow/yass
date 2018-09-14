@@ -8,10 +8,12 @@ import numpy as np
 
 import yass
 from yass.templates.util import get_templates
-from yass.augment.noise import noise_cov
-from yass.augment.util import (make_from_templates, make_collided, make_noise,
-                               make_spatially_misaligned,
-                               make_temporally_misaligned)
+from yass.spikes.augment import (noise_cov,
+                                 make_from_templates,
+                                 make_collided,
+                                 make_noise,
+                                 make_spatially_misaligned,
+                                 make_temporally_misaligned)
 from yass.batch import RecordingsReader
 
 
@@ -19,8 +21,7 @@ from yass.batch import RecordingsReader
 def templates_uncropped(path_to_config, make_tmp_folder,
                         path_to_sample_pipeline_folder,
                         path_to_standarized_data):
-    spike_train = np.array([100, 0,
-                            150, 0,
+    spike_train = np.array([100, 0, 150, 0,
                             200, 1,
                             250, 1,
                             300, 2,
