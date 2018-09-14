@@ -9,7 +9,7 @@ from yass.cluster.legacy.triage import triage
 from yass.cluster.legacy.coreset import coreset
 from yass.cluster.legacy.mask import getmask
 from yass.cluster.legacy.util import (run_cluster, calculate_sparse_rhat)
-from yass.mfm import get_core_data
+from yass.cluster.mfm import get_core_data
 
 
 def neigh_channels(spike_index):

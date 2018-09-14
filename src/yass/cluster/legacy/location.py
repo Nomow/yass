@@ -10,7 +10,7 @@ from yass.cluster.legacy.triage import triage
 from yass.cluster.legacy.util import (calculate_sparse_rhat,
                                       run_cluster_location)
 from yass.detect.nnet import AutoEncoder
-from yass.mfm import get_core_data
+from yass.cluster.mfm import get_core_data
 
 
 def location(spike_index, detect_method='threshold',
