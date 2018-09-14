@@ -13,8 +13,8 @@ import tensorflow as tf
 
 from yass import read_config
 from yass.batch import BatchProcessor
-from yass.neuralnetwork import NeuralNetDetector, AutoEncoder, KerasModel
-from yass.neuralnetwork.apply import post_processing, fix_indexes_spike_index
+from yass.detect.nnet import NeuralNetDetector, AutoEncoder, KerasModel
+from yass.detect.nnet.apply import post_processing, fix_indexes_spike_index
 from yass.detect.util import remove_incomplete_waveforms
 from yass.geometry import n_steps_neigh_channels
 from yass.util import running_on_gpu

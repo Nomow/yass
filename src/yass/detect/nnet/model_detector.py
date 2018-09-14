@@ -9,10 +9,10 @@ from sklearn.model_selection import train_test_split
 from tqdm import trange
 import logging
 
-from yass.neuralnetwork.utils import (weight_variable, bias_variable, conv2d,
-                                      conv2d_VALID, max_pool)
+from yass.detect.nnet.utils import (weight_variable, bias_variable, conv2d,
+                                    conv2d_VALID, max_pool)
 from yass.util import load_yaml, change_extension
-from yass.neuralnetwork.model import Model
+from yass.detect.nnet.model import Model
 
 
 class NeuralNetDetector(Model):

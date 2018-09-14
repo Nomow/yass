@@ -11,10 +11,10 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from tqdm import trange
 
-from yass.neuralnetwork.utils import (weight_variable, bias_variable, conv2d,
-                                      conv2d_VALID)
+from yass.detect.nnet.utils import (weight_variable, bias_variable, conv2d,
+                                    conv2d_VALID)
 from yass.util import load_yaml, change_extension
-from yass.neuralnetwork.model import Model
+from yass.detect.nnet.model import Model
 
 
 class NeuralNetTriage(Model):
