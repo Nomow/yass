@@ -1,7 +1,6 @@
 """
 Detecting spikes
 """
-
 import logging
 
 import yass
@@ -20,4 +19,5 @@ standarized_path, standarized_params, whiten_filter = preprocess.run()
 # run detection
 clear, collision = detect.run(standarized_path,
                               standarized_params,
-                              whiten_filter)
+                              whiten_filter,
+                              if_file_exists='overwrite')
