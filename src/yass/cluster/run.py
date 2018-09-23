@@ -24,7 +24,9 @@ from yass.mfm import get_core_data
     relative_to='output_directory',
     auto_save=True,
     prepend_root_folder=True)
-def run(spike_index,
+    
+def run(spike_index_clear, 
+        spike_index_all,
         output_directory='tmp/',
         if_file_exists='skip',
         save_results=False):
@@ -65,7 +67,7 @@ def run(spike_index,
 
     """
     # load files in case they are strings or Path objects
-    spike_index = file_loader(spike_index)
+    #spike_index = file_loader(spike_index)
 
     CONFIG = read_config()
 
@@ -75,7 +77,7 @@ def run(spike_index,
 
     logger = logging.getLogger(__name__)
 
-    spike_index_all = np.copy(spike_index)  # this is only spike_index clear
+    #spike_index_all = np.copy(spike_index)  # this is only spike_index clear
 
     # start timer
     _b = datetime.datetime.now()
@@ -88,7 +90,7 @@ def run(spike_index,
     
     if os.path.exists(fname)==False:
 
-        spike_index_clear = spike_index
+        #spike_index_clear = spike_index
 
         # option to select highest variance points on a channel
         # Cat: TODO: read all these values from CONFIG
@@ -98,8 +100,6 @@ def run(spike_index,
         wf_end = int(CONFIG.recordings.spike_size_ms*
                      CONFIG.recordings.sampling_rate//1000)
                      
-        #n_mad_chans = 5
-        #n_max_chans = 5
         n_feat_chans = 5
         mfm_threshold = 0.85
         upsample_factor = 5
@@ -113,14 +113,14 @@ def run(spike_index,
 
         # run new voltage features-based clustering - chunk the data
         spike_train, tmp_loc, templates = run_cluster_features_chunks(
-                                spike_index_clear, n_dim_pca_compression,
+                                spike_index_clear, spike_index_all, 
+                                n_dim_pca_compression,
                                 n_dim_pca, wf_start, wf_end, n_feat_chans, 
                                 CONFIG, output_directory,
                                 mfm_threshold, upsample_factor, nshifts)
       
-        print ("Spike train clustered: ", spike_train.shape, " # clusters: ",
+        print ("  spike train clustered: ", spike_train.shape, " # clusters: ",
                     np.max(spike_train[:,1])+1)
-
 
     else:
         
