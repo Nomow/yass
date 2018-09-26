@@ -7,7 +7,6 @@ from tqdm import tqdm
 import time
 from yass.cluster.util import (binary_reader, load_waveforms_from_memory)
 
-
 # ********************************************************
 # ********************************************************
 # ********************************************************
@@ -55,7 +54,7 @@ class MatchPursuit_objectiveUpsample(object):
     """Class for doing greedy matching pursuit deconvolution."""
 
     def __init__(self, temps, deconv_chunk_dir, standardized_filename, 
-                 max_iter, refrac_period=20, upsample=1, threshold=10., 
+                 max_iter, refrac_period=120, upsample=1, threshold=10., 
                  conv_approx_rank=5, n_processors=1,multi_processing=False,
                  vis_su=2., 
                  keep_iterations=False):
@@ -81,7 +80,6 @@ class MatchPursuit_objectiveUpsample(object):
             Keeps the spike train per iteration if True. Otherwise,
             does not keep the history.
         """
-        
         
         self.n_time, self.n_chan, self.n_unit = temps.shape
         self.temps = temps.astype(np.float32)
@@ -132,13 +130,14 @@ class MatchPursuit_objectiveUpsample(object):
         self.orig_template_idx = np.arange(0, self.n_unit, self.up_factor)
         print ("  # upsample templates: ", self.n_unit)
         
-        
         # Computing SVD for each template.
+        print ("  computing SVD on templates ")
         self.compress_templates()
         
         # Compute pairwise convolution of filters
         print ("  computing temp_temp")
         self.pairwise_filter_conv()
+        
         
         # compute norm of templates
         self.norm = np.zeros([self.orig_n_unit, 1], dtype=np.float32)
@@ -231,24 +230,39 @@ class MatchPursuit_objectiveUpsample(object):
 
     def compress_templates(self):
         """Compresses the templates using SVD and upsample temporal compoents."""
-        self.temporal, self.singular, self.spatial = np.linalg.svd(
-            np.transpose(np.flipud(self.temps), (2, 0, 1)))
-        # Keep only the strongest components
-        self.temporal = self.temporal[:, :, :self.approx_rank]
-        self.singular = self.singular[:, :self.approx_rank]
-        self.spatial = self.spatial[:, :self.approx_rank, :]
-        # Upsample the temporal components of the SVD
-        # in effect, upsampling the reconstruction of the
-        # templates.
-        if self.up_factor == 1:
-            # No upsampling is needed.
-            self.temporal_up = self.temporal
-            return
-        self.temporal_up = scipy.signal.resample(
-                self.temporal, self.n_time * self.up_factor, axis=1)
-        idx = np.arange(0, self.n_time * self.up_factor, self.up_factor) + np.arange(self.up_factor)[:, None]
-        self.temporal_up = np.reshape(
-                self.temporal_up[:, idx, :], [-1, self.n_time, self.approx_rank]).astype(np.float32)
+        
+        fname = self.deconv_dir+"/svd.npz"
+        if os.path.exists(fname)==False:
+            self.temporal, self.singular, self.spatial = np.linalg.svd(
+                np.transpose(np.flipud(self.temps), (2, 0, 1)))
+            # Keep only the strongest components
+            self.temporal = self.temporal[:, :, :self.approx_rank]
+            self.singular = self.singular[:, :self.approx_rank]
+            self.spatial = self.spatial[:, :self.approx_rank, :]
+            # Upsample the temporal components of the SVD
+            # in effect, upsampling the reconstruction of the
+            # templates.
+            if self.up_factor == 1:
+                # No upsampling is needed.
+                self.temporal_up = self.temporal
+                return
+            self.temporal_up = scipy.signal.resample(
+                    self.temporal, self.n_time * self.up_factor, axis=1)
+            idx = np.arange(0, self.n_time * self.up_factor, self.up_factor) + np.arange(self.up_factor)[:, None]
+            self.temporal_up = np.reshape(
+                    self.temporal_up[:, idx, :], [-1, self.n_time, self.approx_rank]).astype(np.float32)
+
+            np.savez(fname,
+                     temporal_up = self.temporal_up,
+                     temporal = self.temporal, 
+                     singular = self.singular,
+                     spatial = self.spatial)
+        else:
+            data = np.load(fname)
+            self.temporal_up = data['temporal_up']
+            self.temporal = data['temporal']
+            self.singular = data['singular']
+            self.spatial = data['spatial']
 
 
     # Cat: TODO: Parallelize this function
@@ -306,7 +320,7 @@ class MatchPursuit_objectiveUpsample(object):
 
             if not self.multi_processing:
             #if True:
-                print ("  (todo parallelize pairse filter conv)...")
+                #print ("  (todo parallelize pairse filter conv)...")
                 conv_res_len = self.n_time * 2 - 1
                 self.pairwise_conv = []
                 for i in range(self.n_unit):
@@ -338,9 +352,9 @@ class MatchPursuit_objectiveUpsample(object):
                 self.pairwise_filter_conv_parallel()
                 
             np.save(self.deconv_dir+"/pairwise_conv.npy", self.pairwise_conv)
-            
-            # zero out data
-            self.pairwise_conv = None
+
+        else:
+            self.pairwise_conv = np.load(self.deconv_dir+'/pairwise_conv.npy')
     
     
     def get_reconstructed_upsampled_templates(self):
@@ -364,40 +378,83 @@ class MatchPursuit_objectiveUpsample(object):
         of deconvolution to 0,...,M-1 that corresponds to the sparse upsampled
         templates.
         """
-        down_sample_idx = np.arange(
-                0, self.n_time * self.up_factor, self.up_factor)
-        down_sample_idx = down_sample_idx + np.arange(
-                0, self.up_factor)[:, None]
-        result = []
-        # Reordering the upsampling. This is done because we upsampled the time
-        # reversed temporal components of the SVD reconstruction of the
-        # templates. This means That the time-reveresed 10x upsampled indices
-        # respectively correspond to [0, 9, 8, ..., 1] of the 10x upsampled of
-        # the original templates.
-        all_temps = []
-        reorder_idx = np.append(
-                np.arange(0, 1),
-                np.arange(self.up_factor - 1, 0, -1))
-        # Sequentialize the number of up_up_map. For instance,
-        # [0, 0, 0, 0, 4, 4, 4, 4, ...] turns to [0, 0, 0, 0, 1, 1, 1, 1, ...].
-        deconv_id_sparse_temp_map = []
-        tot_temps_so_far = 0
-        for i in range(self.orig_n_unit):
-            up_temps = scipy.signal.resample(
-                    self.orig_temps[:, :, i],
-                    self.n_time * self.up_factor)[down_sample_idx, :]
-            up_temps = up_temps.transpose([1, 2, 0])
-            up_temps = up_temps[:, :, reorder_idx]
-            skip = self.up_factor // self.unit_up_factor[i]
-            keep_upsample_idx = np.arange(0, self.up_factor, skip).astype(np.int32)
-            deconv_id_sparse_temp_map.append(np.arange(
-                    self.unit_up_factor[i]).repeat(skip) + tot_temps_so_far)
-            tot_temps_so_far += self.unit_up_factor[i]
-            all_temps.append(up_temps[:, :, keep_upsample_idx])
+        
+        fname = self.deconv_dir+"/sparse_templates.npy"
+        if os.path.exists(fname)==False:
+        
+            print ("  getting sparse upsampled templates (todo: Parallelize)...")
+            down_sample_idx = np.arange(
+                    0, self.n_time * self.up_factor, self.up_factor)
+            down_sample_idx = down_sample_idx + np.arange(
+                    0, self.up_factor)[:, None]
+            result = []
+            
+            # Reordering the upsampling. This is done because we upsampled the time
+            # reversed temporal components of the SVD reconstruction of the
+            # templates. This means That the time-reveresed 10x upsampled indices
+            # respectively correspond to [0, 9, 8, ..., 1] of the 10x upsampled of
+            # the original templates.
+            all_temps = []
+            reorder_idx = np.append(
+                    np.arange(0, 1),
+                    np.arange(self.up_factor - 1, 0, -1))
 
-        deconv_id_sparse_temp_map = np.concatenate(
-                deconv_id_sparse_temp_map, axis=0)
-        return np.concatenate(all_temps, axis=2), deconv_id_sparse_temp_map
+            # Sequentialize the number of up_up_map. For instance,
+            # [0, 0, 0, 0, 4, 4, 4, 4, ...] turns to [0, 0, 0, 0, 1, 1, 1, 1, ...].
+            deconv_id_sparse_temp_map = []
+            tot_temps_so_far = 0
+            
+                            
+            for i in range(self.orig_n_unit):
+                up_temps = scipy.signal.resample(
+                        self.orig_temps[:, :, i],
+                        self.n_time * self.up_factor)[down_sample_idx, :]
+                up_temps = up_temps.transpose([1, 2, 0])
+                up_temps = up_temps[:, :, reorder_idx]
+                skip = self.up_factor // self.unit_up_factor[i]
+                keep_upsample_idx = np.arange(0, self.up_factor, skip).astype(np.int32)
+                deconv_id_sparse_temp_map.append(np.arange(
+                        self.unit_up_factor[i]).repeat(skip) + tot_temps_so_far)
+                tot_temps_so_far += self.unit_up_factor[i]
+                all_temps.append(up_temps[:, :, keep_upsample_idx])
+
+
+            deconv_id_sparse_temp_map = np.concatenate(
+                                    deconv_id_sparse_temp_map, axis=0)
+                
+            all_temps = np.concatenate(all_temps, axis=2)
+            
+            np.save(fname, all_temps)
+            np.save(os.path.split(fname)[0]+'/deconv_id_sparse_temp_map.npy',
+                                                    deconv_id_sparse_temp_map)
+        
+        else:
+                        
+            all_temps = np.load(fname)
+            deconv_id_sparse_temp_map = np.load(os.path.split(fname)[0]+
+                                            '/deconv_id_sparse_temp_map.npy')
+        
+        return all_temps, deconv_id_sparse_temp_map
+        
+    def get_sparse_upsampled_templates_parallel(self, unit):
+        
+        i = unit
+
+        up_temps = scipy.signal.resample(
+                self.orig_temps[:, :, i],
+                self.n_time * self.up_factor)[down_sample_idx, :]
+        up_temps = up_temps.transpose([1, 2, 0])
+        up_temps = up_temps[:, :, reorder_idx]
+        skip = self.up_factor // self.unit_up_factor[i]
+        keep_upsample_idx = np.arange(0, self.up_factor, skip).astype(np.int32)
+
+        deconv_id_sparse_temp_map.append(np.arange(
+                self.unit_up_factor[i]).repeat(skip) + tot_temps_so_far)
+
+        tot_temps_so_far += self.unit_up_factor[i]
+
+        all_temps.append(up_temps[:, :, keep_upsample_idx])
+        
         
         
         
@@ -471,7 +528,6 @@ class MatchPursuit_objectiveUpsample(object):
         n_rows = self.orig_n_unit * self.approx_rank
         conv_result = np.zeros(
                 [n_rows, self.data_len + self.n_time - 1], dtype=np.float32)
-        #print (conv_result.shape, conv_result.nbytes)
         
         filters = self.temporal.transpose([0, 2, 1]).reshape([n_rows, -1])
 
@@ -479,7 +535,6 @@ class MatchPursuit_objectiveUpsample(object):
             matmul_result = np.matmul(
                     self.spatial.reshape([n_rows, -1]) * self.singular.reshape([-1, 1]),
                     self.data.T)
-            #print (matmul_result.shape, matmul_result.nbytes)
 
             for i in range(n_rows):
                 conv_result[i, :] = np.convolve(
@@ -500,6 +555,7 @@ class MatchPursuit_objectiveUpsample(object):
             conv_result[np.arange(0, n_rows, self.approx_rank), :] +=\
                     conv_result[np.arange(i, n_rows, self.approx_rank), :]
         self.obj = 2 * conv_result[np.arange(0, n_rows, self.approx_rank), :] - self.norm
+
         # Set indicator to true so that it no longer is run
         # for future iterations in case subtractions are done
         # implicitly.
@@ -635,8 +691,9 @@ class MatchPursuit_objectiveUpsample(object):
         #self.data = data.astype(np.float32)
         self.data_len = self.data.shape[0]
         
-        # load pairwise conv filter
-        self.pairwise_conv = np.load(self.deconv_dir+"/pairwise_conv.npy")
+        # load pairwise conv filter OR TRY TO USE GLOBAL SHARED VARIABLE
+        #self.pairwise_conv = np.load(self.deconv_dir+"/pairwise_conv.npy")
+        #self.pairwise_conv = pairwise_conv
 
         # update data
         self.update_data()
@@ -699,32 +756,30 @@ class MatchPursuit_objectiveUpsample(object):
 
 class MatchPursuitWaveforms(object):
     
-    def __init__(self, data, temps, dec_spike_train, buffer_size, n_processors):
+    def __init__(self, 
+                 temps,
+                 dec_spike_train, 
+                 buffer_size, 
+                 n_processors, 
+                 deconv_chunk_dir, 
+                 chunk_size, 
+                 n_sec_chunk,
+                 idx_list_local):
         
         """ Initialize by computing residuals
             provide: raw data block, templates, and deconv spike train; 
         """
-        self.data = data.copy()
-        data=None
         self.n_time, self.n_chan, self.n_unit = temps.shape
-        self.temps = temps
+        self.buffer_size = buffer_size
+        self.standardized_filename = '/media/cat/1TB/liam/49channels/data1_allset/tmp/standarized.bin'
+
         self.dec_spike_train = dec_spike_train
         self.n_processors = n_processors
-    
-    def compute_residual(self):
-        print ("  computing residual (todo: parallelize)")
-        print ("  # of units: ", np.unique(self.dec_spike_train[:,1]).shape)
-
-        unique_units = np.unique(self.dec_spike_train[:,1])
-        for i in tqdm(unique_units, '  computing residual postdeconv'):
-
-            unit_sp = self.dec_spike_train[self.dec_spike_train[:, 1] == i, :]
-            template_id = int(self.deconv_id_sparse_temp_map[i])
-
-    
-            self.data[np.arange(0, self.n_time) + unit_sp[:, :1], :] -= self.temps[:,
-                                             :,template_id ]
-    
+        self.deconv_chunk_dir = deconv_chunk_dir
+        self.chunk_size = chunk_size
+        self.n_sec_chunk = n_sec_chunk
+        self.idx_list_local = idx_list_local
+                             
     def get_unit_spikes(self, unit, unit_sp):
         """Gets clean spikes for a given unit."""
         #unit_sp = dec_spike_train[dec_spike_train[:, 1] == unit, :]
@@ -756,95 +811,110 @@ class MatchPursuitWaveforms(object):
                 buffer zones. 
         '''
         
-        print ("  compute residual in parallel, data shape: ", self.data.shape)
-
-        #np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/deconv/chunk_000001/data_inside.npy', self.data)
+        print ("  compute residual in parallel ...")
 
         # take 10sec chunks with 200 buffer on each side
-        # Cat: TODO: read from CONFIG file
-        buffer_size = 200
-        len_chunks = 20000*10
+        # Cat: TODO: read sampling rate and buffer_size from CONFIG file
+        len_chunks = 20000*self.n_sec_chunk
         
-        # split data stack into equal chunks with buffer (+end piece) 
-        data_stack = []
-        data_stack.append(self.data[0:len_chunks+2*buffer_size])
-        indexes=[]
-        indexes.append([0,len_chunks+2*buffer_size])
-
-        # split spikes for each chunk
+        # get indexes for entire chunk from local chunk list
+        end_index = self.idx_list_local[-1][1]
         spike_times=[]
-        idx_in_chunk = np.where(np.logical_and(
-                self.dec_spike_train[:,0]>=buffer_size,
-                self.dec_spike_train[:,0]<(buffer_size+len_chunks)))[0]
-        
-        spike_times.append(self.dec_spike_train[idx_in_chunk])
-        for ctr,k in enumerate(range(indexes[0][1], self.data.shape[0], len_chunks)):
-            start = k-buffer_size*2
+        indexes=[]
+        for ctr,k in enumerate(range(0, end_index, len_chunks)):
+            start = k
             end = k+len_chunks
 
             # split data for each chunk
-            data_stack.append(self.data[start:end])
+            indexes.append([start,end, ctr])
 
-            # temp debug variable
-            indexes.append([start,end])
-
-            # assign spikes in each chunk
+            # assign spikes in each chunk; offset 
             idx_in_chunk = np.where(np.logical_and(
-                    self.dec_spike_train[:,0]>=(start+buffer_size),
-                    self.dec_spike_train[:,0]<(end-buffer_size)))[0]
+                                    self.dec_spike_train[:,0]>=start-self.buffer_size,
+                                    self.dec_spike_train[:,0]<end+self.buffer_size))[0]
+            
+            print (start, end)
+            
             spikes_in_chunk = self.dec_spike_train[idx_in_chunk]
-            spikes_in_chunk[:,0] -= start
+            # reset spike times to zero for each chunk but add in bufer_size
+            #  that will be read in with data 
+            spikes_in_chunk[:,0] = spikes_in_chunk[:,0] - start #+ self.buffer_size
             spike_times.append(spikes_in_chunk)
+
+        spike_times = np.array(spike_times)
 
         # Cat: TODO: read multiprocessing flag from CONFIG
         if CONFIG.resources.multi_processing:
-            res = parmap.map(subtract_parallel, list(zip(data_stack,spike_times)), 
+            parmap.map(self.subtract_parallel, 
+                         list(zip(indexes,spike_times)), 
                          self.n_unit, self.n_time, 
-                         self.temps, buffer_size, 
-                         self.deconv_id_sparse_temp_map,
+                         self.deconv_chunk_dir,
                          processes=CONFIG.resources.n_processors,
                          pm_pbar=True)
         else:
-            res = []
-            for k in range(len(data_stack)):
-                res.append(subtract_parallel([data_stack[k],spike_times[k]],
+            for k in range(len(indexes)):
+                self.subtract_parallel(
+                           [indexes[k],spike_times[k]],
                            self.n_unit, self.n_time,
-                           self.temps, buffer_size,
-                           self.deconv_id_sparse_temp_map))
+                           self.deconv_chunk_dir)
         
-        # zero out original data matrix and then add chunks from cores
-        self.data*=0.
-        for k in range(len(res)):
-            self.data[indexes[k][0]+buffer_size:indexes[k][1]-buffer_size]+= res[k][buffer_size:-buffer_size]
+        # initilize residual array with buffers; 
+        self.data = np.zeros((end_index+self.buffer_size*2,self.n_chan),dtype=np.float32)
+        for k in range(len(indexes)):
+            fname = self.deconv_chunk_dir+ '/residual_seg_'+str(indexes[k][2])+'.npy'
+            res = np.load(fname)
+            os.remove(fname)
+            self.data[indexes[k][0]+self.buffer_size:indexes[k][1]+self.buffer_size]+= res[self.buffer_size:-self.buffer_size]
 
-        #np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/deconv/chunk_000001/data_inside_postres.npy', self.data)
 
-def subtract_parallel(data_in, n_unit, n_time, temps, buffer_size,
-                      deconv_id_sparse_temp_map):
-    '''
-    
-    '''
+    def subtract_parallel(self, data_in, n_unit, n_time, 
+                          deconv_chunk_dir):
+        '''
+        '''
         
-    # note only derasterize up to last bit, don't remove spikes from 
-    # buffer_size.. end because those will be looked at by next chunk
-    data=data_in[0]
-    local_spike_train=data_in[1]
-    data_blank = np.zeros(data.shape)
-    unique_units = np.unique(local_spike_train[:,1])
-    for i in unique_units:
-        unit_sp = local_spike_train[local_spike_train[:, 1] == i, :]
+        indexes = data_in[0]
+        local_spike_train=data_in[1]
+        proc_index = indexes[2]
 
-        # subtract data from both the datachunk and blank version
-        template_id = int(deconv_id_sparse_temp_map[i])
-        data[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
-        data_blank[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
+        fname = deconv_chunk_dir+ '/residual_seg_'+str(proc_index)+'.npy'
+        if os.path.exists(fname)==True:
+            return
 
-    # remove the buffer contributions x 2 so they can be properly added in after
-    # note: this will make a small error in the first buffer and last buffer for
-    # entire dataset; can fix this with some conditional
-    data[:buffer_size]-=data_blank[:buffer_size]
-    data[-buffer_size:]-=data_blank[-buffer_size:]
-    
-    # need to return copy, otherwise data get zeroed out 
-    return data.copy()
+        # note only derasterize up to last bit, don't remove spikes from 
+        # buffer_size.. end because those will be looked at by next chunk
+        # load indexes and then index into original data
 
+        idx_chunk = [indexes[0], indexes[1], self.buffer_size]
+        data = binary_reader(idx_chunk, 
+                             self.buffer_size, 
+                             self.standardized_filename, 
+                             self.n_chan)
+        data_blank = np.zeros(data.shape)
+
+        deconv_id_sparse_temp_map = np.load(deconv_chunk_dir +'/deconv_id_sparse_temp_map.npy')
+        temps = np.load(deconv_chunk_dir+'/sparse_templates.npy')
+
+        # loop over units and subtract energy
+        unique_units = np.unique(local_spike_train[:,1])
+        for i in unique_units:
+            unit_sp = local_spike_train[local_spike_train[:, 1] == i, :]
+
+            # subtract data from both the datachunk and blank version
+            template_id = int(deconv_id_sparse_temp_map[i])
+            data[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
+            data_blank[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
+
+        # Cat: TODO: This still leaves edge artifacts in; should fix at some point
+        #       So the problem is that if a large spike is on the buffer border, only
+        #       the onside part will be deleted, the part in the buffer will be left alone
+        #       the correct way to fix this is to add overlapping buffers back to raw...
+
+        # remove the buffer contributions x 2 so they can be properly added in after
+        # note: this will make a small error in the first buffer and last buffer for
+        # entire dataset; can fix this with some conditional
+        #data[:self.buffer_size]-=data_blank[:self.buffer_size]
+        #data[-self.buffer_size:]-=data_blank[-self.buffer_size:]
+        
+        # hard save or parmap can't hold entire data set
+        np.save(fname, data)
+        

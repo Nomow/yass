@@ -26,6 +26,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from diptest.diptest import diptest as dp
 
 
+
 colors=np.asarray(["#000000", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059",
         "#FFDBE5", "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87",
         "#5A0007", "#809693", "#FEFFE6", "#1B4400", "#4FC601", "#3B5DFF", "#4A3B53", "#FF2F80",
@@ -965,8 +966,8 @@ def RRR3_noregress_recovery(channel, wf, sic, gen, fig, grid, x, ax_t, triagefla
         # exclude units whose maximum channel is not on the current 
         # clustered channel
         if mc != channel and (deconv_flag==False): 
-            print ("  channel: ", channel, " template has maxchan: ", mc, 
-                    " skipping ...")
+            #print ("  channel: ", channel, " template has maxchan: ", mc, 
+            #        " skipping ...")
             return 
         else:         
             N= len(assignment_global)
@@ -1617,7 +1618,7 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
     
     # Cat: TODO: this logic isn't quite correct; should merge with above
     if os.path.exists(os.path.join(CONFIG.data.root_folder, 
-                          'tmp/templates.npy'))==False: 
+                          'tmp/cluster/spike_train_post_cluster_post_merge_post_cutoff.npy'))==False: 
 
         # reload recording chunk if not already in memory
         if recording_chunk is None: 
@@ -2102,7 +2103,7 @@ def global_merge_max_dist(chunk_dir, recording_chunk, CONFIG, min_spikes,
     templates = np.vstack(templates)
     weights = np.hstack(weights)
 
-    print ("  TEMPLATES: ", templates.shape)
+    print ("  templates: ", templates.shape)
     
     # rearange spike indees from id 0..N
     spike_train = np.zeros((0,2),'int32')
@@ -2113,29 +2114,24 @@ def global_merge_max_dist(chunk_dir, recording_chunk, CONFIG, min_spikes,
         spike_train = np.vstack((spike_train, temp))
     spike_indexes = spike_train
 
+
+    # delete templates below certain treshold; and collision templates
+    if True: 
+        templates, spike_indexes = clean_templates(templates.swapaxes(0,2),
+                                                 spike_indexes,
+                                                 CONFIG)
+        templates = templates.swapaxes(0,2).swapaxes(1,2)
+
     print("  "+out_dir+ " templates/spiketrain before merge/cutoff: ", templates.shape, spike_indexes.shape)
 
     np.save(chunk_dir  + '/templates_post_'+out_dir+'_before_merge_before_cutoff.npy', templates)
     np.save(chunk_dir + '/spike_train_post_'+out_dir+'_before_merge_before_cutoff.npy', spike_indexes)
-    #print (np.unique(spike_indexes[:,1]))
 
 
     ''' ************************************************
         ********** COMPUTE SIMILARITY METRICS **********
         ************************************************
     '''
-
-    # first denoise/smooth all templates in global template space;
-    # then use temps_PCA for cos_sim_test; this removes many bumps
-    spike_width = templates.shape[1]
-    temps_stack = np.swapaxes(templates, 1,0)
-    temps_stack = np.reshape(temps_stack, (temps_stack.shape[0], 
-                             temps_stack.shape[1]*temps_stack.shape[2])).T
-    _, temps_PCA, pca_object = PCA(temps_stack, n_pca)
-
-    temps_PCA = temps_PCA.reshape(templates.shape[0],templates.shape[2],templates.shape[1])
-    temps_PCA = np.swapaxes(temps_PCA,1,2)
-
     # ************** GET SIM_MAT ****************
     # initialize cos-similarty matrix and boolean version 
     # Cat: TODO: it seems most safe for this matrix to be recomputed 
@@ -2145,9 +2141,20 @@ def global_merge_max_dist(chunk_dir, recording_chunk, CONFIG, min_spikes,
     
     abs_max_file = (chunk_dir+'/abs_max_vector_post_cluster.npy')
     if os.path.exists(abs_max_file)==False:
+        # first denoise/smooth all templates in global template space;
+        # then use temps_PCA for cos_sim_test; this removes many bumps
+        spike_width = templates.shape[1]
+        temps_stack = np.swapaxes(templates, 1,0)
+        temps_stack = np.reshape(temps_stack, (temps_stack.shape[0], 
+                                 temps_stack.shape[1]*temps_stack.shape[2])).T
+        _, temps_PCA, pca_object = PCA(temps_stack, n_pca)
+
+        temps_PCA = temps_PCA.reshape(templates.shape[0],templates.shape[2],templates.shape[1])
+        temps_PCA = np.swapaxes(temps_PCA,1,2)
+        
         sim_mat = abs_max_dist(temps_PCA, CONFIG)
         np.save(abs_max_file, sim_mat)
-
+        
     else:
         sim_mat = np.load(abs_max_file)        
 
@@ -2218,7 +2225,6 @@ def abs_max_dist(temp, CONFIG):
     
     dist_max = np.zeros((temp.shape[0],temp.shape[0]), 'float32')
     
-    print (CONFIG.resources.multi_processing, CONFIG.resources.n_processors)
     if CONFIG.resources.multi_processing:
         ids = np.array_split(np.arange(temp.shape[0]), CONFIG.resources.n_processors)
         res = parmap.map(parallel_abs_max_dist, ids, temp, 
@@ -3869,10 +3875,113 @@ def get_template_PCA_rotation(wf_shifted=None, n_pca=3):
 
 
 
+def clean_templates(templates, spike_train_cluster, CONFIG):
+
+    ''' ***************************************************
+        ************* DELETE SMALL TEMPLATES **************
+        ***************************************************
+    '''
+    # remove templates < 3SU
+
+    #print (" cleaning templates: ", templates.shape)
+    # Cat: TODO: read this threshold and flag from CONFIG
+    template_threshold = 3
+
+    # need to transpose axes for analysis below
+    templates = templates.swapaxes(0,1)
+    ptps = templates.ptp(0).max(0)
+    idx = np.where(ptps>=template_threshold)[0]
+    print ("  deleted # clusters < 3SU: ", templates.shape[2]-idx.shape[0])
+    
+    templates = templates[:,:,idx]
+    
+    spike_train_cluster_new = []
+    for ctr,k in enumerate(idx):
+        temp = np.where(spike_train_cluster[:,1]==k)[0]
+        temp_train = spike_train_cluster[temp]
+        temp_train[:,1]=ctr
+        spike_train_cluster_new.append(temp_train)
+        
+    spike_train_cluster_new = np.vstack(spike_train_cluster_new)
+    
+    
+    ''' ***************************************************
+        ************* DELETE COLLISION TEMPLATES **********
+        ***************************************************
+    '''
+    idx = find_clean_templates(templates, CONFIG)
+    print ("  deleted # collsion clusters: ", templates.shape[2]-idx.shape[0])
+    
+    templates = templates[:,:,idx]
+    spike_train_cluster_new = []
+    for ctr,k in enumerate(idx):
+        temp = np.where(spike_train_cluster[:,1]==k)[0]
+        temp_train = spike_train_cluster[temp]
+        temp_train[:,1]=ctr
+        spike_train_cluster_new.append(temp_train)
+        
+    spike_train_cluster_new = np.vstack(spike_train_cluster_new)
+    
+    #quit()
+    
+    return templates, spike_train_cluster_new
 
 
+def find_clean_templates(templates, CONFIG):
+    
+    # normalize templates on max channels:
+    max_chans = templates.ptp(0).argmax(0)
+    temps_normalized=[]
+    for u in range(templates.shape[2]):
+        trace = templates[:,max_chans[u],u]
+        temps_normalized.append(trace/trace.ptp(0))
+    temps_normalized = np.array(temps_normalized)
+    
+    # first 
+    mean_template = temps_normalized.mean(0)
+    templates = np.vstack((temps_normalized, mean_template))
 
+    # Cat: TODO: limit # of shifts here, we don't want to correct bad templates using
+    #           alignment
+    nshifts = 5 
+    upsample_factor = 5
+    templates_aligned, best_shifts = align_singletrace_lastchan(templates.T, 
+                                                            CONFIG, 
+                                                            upsample_factor, 
+                                                            nshifts)
+    
+    
+    #np.save('/home/cat/templates_aligned.npy'  , templates_aligned)
+    #print ("  templates_aligned: ", templates_aligned.shape)
 
+    # find largest negative peak and the following one
+    mean_template = templates_aligned.mean(0)
+    #print (mean_template.shape)
+    mean_template_centre = np.argmin(mean_template)
+    
+    template_ids = []
+    ctr=0
+    for k in range(templates_aligned.shape[0]-1):
+        # find max trough location
+        max_time = np.argmin(templates_aligned[k,mean_template_centre-3:
+                                    mean_template_centre+3])+mean_template_centre-3
+
+        # find next largest trough 
+        min_times = argrelmin(templates_aligned[k], axis=0, order=1, mode='clip')[0]
+        del_idx = np.where(min_times==max_time)[0]
+        min_times_nonlowest = np.delete(min_times, del_idx)
+
+        if min_times_nonlowest.shape[0]!=0:
+            nearest = min_times_nonlowest[np.argmin(templates_aligned[k][min_times_nonlowest])]
+        else:
+            nearest = 0
+        
+        if templates_aligned[k][nearest]<-0.15 or abs(max_time-mean_template_centre)>3: # or abs(max_time-17)>4:
+            pass
+        else:
+            template_ids.append(k)
+            
+    return np.array(template_ids)
 
 
 

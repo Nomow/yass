@@ -179,6 +179,13 @@ def run_neural_network2(standarized_path, standarized_params, channel_index,
                                     CONFIG.data.recordings)
         fp = np.memmap(filename_dat, dtype='int16', mode='r')
         fp_len = fp.shape[0] / n_channels
+        
+        #print (fp_len)
+        # limit detection to only first chunk being clustered; usually 5mins
+        # Cat: TODO: read this from disk
+        fp_len = 300 * 20000.
+        #print (fp_len)
+        
 
         # compute batch indexes
         buffer_size = 200       # Cat: to set this in CONFIG file
@@ -208,7 +215,7 @@ def run_neural_network2(standarized_path, standarized_params, channel_index,
         
         print("# of chunks: ", len(idx_list))
         
-        print (idx_list)
+        #print (idx_list)
         
         # run tensorflow 
         processing_ctr = 0
