@@ -180,11 +180,11 @@ def run_neural_network2(standarized_path, standarized_params, channel_index,
         fp = np.memmap(filename_dat, dtype='int16', mode='r')
         fp_len = fp.shape[0] / n_channels
         
-        #print (fp_len)
+        print (fp_len)
         # limit detection to only first chunk being clustered; usually 5mins
         # Cat: TODO: read this from disk
         fp_len = 300 * 20000.
-        #print (fp_len)
+        print (fp_len)
         
 
         # compute batch indexes
@@ -292,7 +292,7 @@ def run_neural_network2(standarized_path, standarized_params, channel_index,
                     energy_list.append(energy_)
                    
                     logger.info('processed chunk: %s/%s,  # spikes: %s', 
-                      str(processing_ctr), str(total_processing), spike_index.shape)
+                      str(processing_ctr), str(total_processing), spike_index.shape-1)
             
                     processing_ctr+=1
             

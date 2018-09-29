@@ -898,9 +898,16 @@ class MatchPursuitWaveforms(object):
         unique_units = np.unique(local_spike_train[:,1])
         for i in unique_units:
             unit_sp = local_spike_train[local_spike_train[:, 1] == i, :]
+            
+            
 
             # subtract data from both the datachunk and blank version
             template_id = int(deconv_id_sparse_temp_map[i])
+            
+            # don't delete small templates
+            #if temps[:, :, template_id].ptp(0).max(0)<8.0:
+            #    continue
+            
             data[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
             data_blank[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
 

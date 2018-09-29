@@ -171,7 +171,6 @@ def run2(spike_train_cluster,
         if chunk_ctr==n_iterations:
             break
             
-            
         # select segments and chunk to be processed
         #idx_list_local = idx_list[c:c+chunk_size]
         idx_list_local = idx_list[c:c+chunk_size]
@@ -259,6 +258,7 @@ def run2(spike_train_cluster,
             os.makedirs(deconv_chunk_dir)
             os.makedirs(deconv_chunk_dir+'/lost_units/')
 
+        print (" TODO: don't recomp temp_temp for final step if prev. computed!")         
         match_pursuit_function(
                         CONFIG, 
                         templates, 
@@ -272,7 +272,6 @@ def run2(spike_train_cluster,
                         chunk_ctr,
                         buffer_size)
         
-        print (" TODO: don't recompute temp_temp for final pass!")         
 
     ''' 
     *********************************************************
@@ -442,8 +441,10 @@ def reclustering_function(CONFIG,
                                          output_directory, 
                                          recordings_filename)
     n_channels = CONFIG.recordings.n_channels
-    recording_chunk = binary_reader(idx, buffer_size, 
-                standardized_filename, n_channels)
+    recording_chunk = binary_reader(idx, 
+                                    buffer_size, 
+                                    standardized_filename, 
+                                    n_channels)
                     
 
     ''' ************************************************************
@@ -451,10 +452,7 @@ def reclustering_function(CONFIG,
         ************************************************************
     '''
 
-    # clean templates
-    #clean_templates()
-
-
+    # make argument list
     args_in = []
     units = np.arange(templates.shape[2])
     for unit in units:
@@ -735,7 +733,9 @@ def deconv_residual_recluster(data_in):
         # Cat: TODO: load wider waveforms just as in clustering
         # Cat TODO: Need to load from CONFIG; careful as the templates are
         #           now being extended during cluster preamble using flexible val
-        n_times = 61
+        n_times = template.shape[0]
+        #template = template[25:-25,:]
+        
         
         # Cat: TODO read this from disk
         deconv_max_spikes = 1000
@@ -743,33 +743,41 @@ def deconv_residual_recluster(data_in):
             idx_deconv = np.random.choice(np.arange(unit_sp.shape[0]),
                                           size=deconv_max_spikes,
                                           replace=False)
-            unit_sp = unit_sp[idx_deconv]            
+            unit_sp = unit_sp[idx_deconv]         
 
         # Cat: TODO: here we add addtiional offset for buffer inside residual matrix
         # read waveforms by adding templates to residual
+        spike_padding = 25
         if False:
-            wf = get_wfs_from_residual(unit_sp, template, deconv_chunk_dir,
-                                   n_times)
+            #unit_sp[:,0]+=25
+            wf = get_wfs_from_residual(unit_sp, 
+                                       template, 
+                                       deconv_chunk_dir,
+                                       n_times)
         else:    
             # read waveforms from recording chunk in memory
             # load waveforms with some padding then clip them
             # Cat: TODO: spike_padding to be read/fixed in CONFIG
-            spike_size = 30
-            wf = load_waveforms_from_memory(recording_chunk, data_start, 
-                                            0, unit_sp, 
+            unit_sp[:,0]+=25
+            spike_size = template.shape[0]//2
+            offset = 0
+            wf = load_waveforms_from_memory(recording_chunk, 
+                                            data_start, 
+                                            offset, 
+                                            unit_sp, 
                                             spike_size)
-            
-        #np.save(deconv_chunk_dir+'/wf_loaded.npy', wf)
+        
+        #np.save(deconv_chunk_dir+'/wfs_'+str(unit).zfill(6)+'.npy', wf)
         channel = wf.mean(0).ptp(0).argmax(0)
 
         # run mfm
         scale = 10 
 
-        triageflag = True
+        triageflag = False
         alignflag = True
         plotting = False
         if unit%10==0:
-            plotting = True
+            plotting = False
             
         n_feat_chans = 5
         n_dim_pca = 3
@@ -789,7 +797,7 @@ def deconv_residual_recluster(data_in):
         
         # plotting parameters
         if plotting:
-            #x = np.zeros(100, dtype = int)            
+            #x = np.zeros(100, dtype = int)          
             #fig = plt.figure(figsize =(50,25))
             #grid = plt.GridSpec(10,5,wspace = 0.0,hspace = 0.2)
             #ax_t = fig.add_subplot(grid[13:, 6:])
@@ -806,7 +814,7 @@ def deconv_residual_recluster(data_in):
             x = []
             
         deconv_flag = True
-        RRR3_noregress_recovery(unit, wf, unit_sp, gen, fig, grid, x,
+        RRR3_noregress_recovery(unit, wf[:, spike_padding:-spike_padding], unit_sp, gen, fig, grid, x,
             ax_t, triageflag, alignflag, plotting, n_feat_chans, 
             n_dim_pca, wf_start, wf_end, mfm_threshold, CONFIG, 
             upsample_factor, nshifts, assignment_global, spike_index, scale,
@@ -820,7 +828,7 @@ def deconv_residual_recluster(data_in):
                 ax_t.text(CONFIG.geom[i,0], CONFIG.geom[i,1], str(i), alpha=0.4, 
                                                                 fontsize=30)
                 # fill bewteen 2SUs on each channel
-                ax_t.fill_between(CONFIG.geom[i,0] + np.arange(-61,0,1)/3.,
+                ax_t.fill_between(CONFIG.geom[i,0] + np.arange(-n_times,0,1)/3.,
                     -scale + CONFIG.geom[i,1], scale + CONFIG.geom[i,1], 
                     color='black', alpha=0.05)
                     
@@ -866,23 +874,26 @@ def deconv_residual_recluster(data_in):
 
         # Cat: TODO: note clustering is done on PCA denoised waveforms but
         #            templates are computed on original raw signal
-        np.savez(deconv_filename, spike_index=spike_index, 
-                        templates=templates)
-                        #templates_std=temp_std,
-                        #weights=np.asarray([sic.shape[0] for sic in spike_index]))
+        #np.savez(deconv_filename, spike_index=spike_index, 
+                        #templates=templates)
+                        ##templates_std=temp_std,
+                        ##weights=np.asarray([sic.shape[0] for sic in spike_index]))
 
+        full_templates = []
+        for k in range(len(spike_index)):
+            indexes = np.in1d(unit_sp[:,0], spike_index[k][:,0])
+            template = wf[indexes].mean(0)
+            full_templates.append(template)
+        
+        np.savez(deconv_filename, 
+                        spike_index=spike_index, 
+                        templates=full_templates)
+                        
         print ("**** Unit ", str(unit), ", found # clusters: ", len(spike_index))
         
-    else: 
-    #    # 
-        data = np.load(filename_postclustering, encoding='latin1')
-        spike_index = data['spike_index']
-
-
-
-    if len(spike_index)==0:
-        fname = (deconv_chunk_dir+"/lost_units/unit_"+str(unit).zfill(6)+'.npz')
-        np.savez(fname, original_template=template)
+    #if len(spike_index)==0:
+    #    fname = (deconv_chunk_dir+"/lost_units/unit_"+str(unit).zfill(6)+'.npz')
+    #    np.savez(fname, original_template=template)
     
     # overwrite this variable just in case multiprocessing doesn't destroy it
     wf = None

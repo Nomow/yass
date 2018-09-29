@@ -112,31 +112,37 @@ def run(spike_index_clear,
             os.makedirs(result_dir)
 
         # run new voltage features-based clustering - chunk the data
-        spike_train, tmp_loc, templates = run_cluster_features_chunks(
-                                spike_index_clear, spike_index_all, 
-                                n_dim_pca_compression,
-                                n_dim_pca, wf_start, wf_end, n_feat_chans, 
-                                CONFIG, output_directory,
-                                mfm_threshold, upsample_factor, nshifts)
+        run_cluster_features_chunks(spike_index_clear, 
+                                    spike_index_all, 
+                                    n_dim_pca_compression,
+                                    n_dim_pca, 
+                                    wf_start, 
+                                    wf_end, 
+                                    n_feat_chans, 
+                                    CONFIG, 
+                                    output_directory,
+                                    mfm_threshold, 
+                                    upsample_factor, 
+                                    nshifts)
       
-        print ("  spike train clustered: ", spike_train.shape, " # clusters: ",
-                    np.max(spike_train[:,1])+1)
+        #print ("  spike train clustered: ", spike_train.shape, " # clusters: ",
+        #            np.max(spike_train[:,1])+1)
 
-    else:
+    #else:
         
-        spike_train = np.load(fname)
-        tmp_loc = np.load(os.path.join(CONFIG.data.root_folder, 
-                          output_directory,'tmp_loc.npy'))
-        templates = np.load(os.path.join(CONFIG.data.root_folder, 
-                          output_directory,'templates.npy'))
+        #spike_train = np.load(fname)
+        #tmp_loc = np.load(os.path.join(CONFIG.data.root_folder, 
+                          #output_directory,'tmp_loc.npy'))
+        #templates = np.load(os.path.join(CONFIG.data.root_folder, 
+                          #output_directory,'templates.npy'))
     
-    # report timing
-    #currentTime = datetime.datetime.now()
-    #logger.info("Mainprocess done in {0} seconds.".format(
-        #(currentTime - startTime).seconds))
-    #logger.info("\ttriage:\t{0} seconds".format(Time['t']))
-    #logger.info("\tcoreset:\t{0} seconds".format(Time['c']))
-    #logger.info("\tmasking:\t{0} seconds".format(Time['m']))
-    #logger.info("\tclustering:\t{0} seconds".format(Time['s']))
+    ## report timing
+    ##currentTime = datetime.datetime.now()
+    ##logger.info("Mainprocess done in {0} seconds.".format(
+        ##(currentTime - startTime).seconds))
+    ##logger.info("\ttriage:\t{0} seconds".format(Time['t']))
+    ##logger.info("\tcoreset:\t{0} seconds".format(Time['c']))
+    ##logger.info("\tmasking:\t{0} seconds".format(Time['m']))
+    ##logger.info("\tclustering:\t{0} seconds".format(Time['s']))
 
-    return spike_train, tmp_loc, templates #, vbParam
+    #return spike_train, tmp_loc, templates #, vbParam

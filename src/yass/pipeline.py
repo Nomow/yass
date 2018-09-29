@@ -144,13 +144,12 @@ def run(config, logger_level='INFO', clean=False, output_dir='tmp/',
     # cluster
     start=time.time()
     path_to_spike_train_cluster = path.join(TMP_FOLDER, 'spike_train_cluster.npy')
-    if os.path.exists(path_to_spike_train_cluster):
-        spike_train_cluster = np.load(path_to_spike_train_cluster)
-        tmp_loc = np.load(os.path.join(TMP_FOLDER,'tmp_loc.npy'))
-        templates = np.load(os.path.join(TMP_FOLDER,'templates.npy'))    
-    else:
-        spike_train_cluster, tmp_loc, templates = cluster.run(spike_index_clear,
-                                                    spike_index_all)
+    if os.path.exists(path_to_spike_train_cluster)==False:
+        cluster.run(spike_index_clear, spike_index_all)
+
+    spike_train_cluster = np.load(path_to_spike_train_cluster)
+    templates_cluster = np.load(os.path.join(TMP_FOLDER,'templates.npy'))    
+
     time_cluster = time.time()-start
     #print ("Spike train clustered: ", spike_index_cluster.shape, "spike train clear: ", 
     #        spike_train_clear.shape, " templates: ", templates.shape)
@@ -163,8 +162,9 @@ def run(config, logger_level='INFO', clean=False, output_dir='tmp/',
 
     # run deconvolution
     start=time.time()
-    spike_train, postdeconv_templates = deconvolute.run2(spike_train_cluster, templates,
-                                             output_directory=output_dir)
+    spike_train, postdeconv_templates = deconvolute.run2(spike_train_cluster, 
+                                                         templates_cluster,
+                                                         output_directory=output_dir)
     time_deconvolution = time.time() - start
 
     # save spike train
