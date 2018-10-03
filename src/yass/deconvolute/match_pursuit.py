@@ -11,38 +11,54 @@ from yass.cluster.util import (binary_reader, load_waveforms_from_memory)
 # ********************************************************
 # ********************************************************
 
-def parallel_conv_filter(unit2, 
-                        n_unit,
+def parallel_conv_filter(data_in, 
                         n_time,
                         up_up_map,
                         unit_overlap,
                         up_factor,
-                        temporal,
-                        temporal_up,
-                        singular,
-                        spatial,
                         vis_chan,
-                        approx_rank):
+                        approx_rank,
+                        deconv_dir):
+                            
+    proc_index = data_in[0]
+    unit_array = data_in[1]    
     
-    conv_res_len = n_time * 2 - 1
-    n_overlap = np.sum(unit_overlap[unit2, :])
-    pairwise_conv = np.zeros([n_overlap, conv_res_len], dtype=np.float32)
-    orig_unit = unit2 // up_factor
-    masked_temp = np.flipud(np.matmul(
-            temporal_up[unit2] * singular[orig_unit][None, :],
-            spatial[orig_unit, :, :]))
-    for j, unit1 in enumerate(np.where(unit_overlap[unit2, :])[0]):
-        u, s, vh = temporal[unit1], singular[unit1], spatial[unit1] 
-        vis_chan_idx = vis_chan[:, unit1]
+    # Cat: must load these structures from disk for multiprocessing step; 
+    #       where there are many templates; due to multiproc 4gb limit 
+    fname = deconv_dir+"/svd.npz"
+    data = np.load(fname)
+    temporal_up = data['temporal_up']
+    temporal = data['temporal']
+    singular = data['singular']
+    spatial = data['spatial']
 
-        mat_mul_res = np.matmul(
-                masked_temp[:, vis_chan_idx], vh[:approx_rank, vis_chan_idx].T)
-        for i in range(approx_rank):
-            pairwise_conv[j, :] += np.convolve(
-                    mat_mul_res[:, i],
-                    s[i] * u[:, i].flatten(), 'full')
+    pairwise_conv_array = []
+    for unit2 in unit_array:
+        conv_res_len = n_time * 2 - 1
+        n_overlap = np.sum(unit_overlap[unit2, :])
+        pairwise_conv = np.zeros([n_overlap, conv_res_len], dtype=np.float32)
+        orig_unit = unit2 // up_factor
+        masked_temp = np.flipud(np.matmul(
+                temporal_up[unit2] * singular[orig_unit][None, :],
+                spatial[orig_unit, :, :]))
+
+        for j, unit1 in enumerate(np.where(unit_overlap[unit2, :])[0]):
+            u, s, vh = temporal[unit1], singular[unit1], spatial[unit1] 
+            vis_chan_idx = vis_chan[:, unit1]
+            mat_mul_res = np.matmul(
+                    masked_temp[:, vis_chan_idx], vh[:approx_rank, vis_chan_idx].T)
+
+            for i in range(approx_rank):
+                pairwise_conv[j, :] += np.convolve(
+                        mat_mul_res[:, i],
+                        s[i] * u[:, i].flatten(), 'full')
     
-    return pairwise_conv
+        pairwise_conv_array.append(pairwise_conv)
+        
+    np.save(deconv_dir+'/temp_temp_chunk_'+str(proc_index), 
+                                                pairwise_conv_array)
+
+    #return pairwise_conv
 
 
 
@@ -54,7 +70,7 @@ class MatchPursuit_objectiveUpsample(object):
     """Class for doing greedy matching pursuit deconvolution."""
 
     def __init__(self, temps, deconv_chunk_dir, standardized_filename, 
-                 max_iter, refrac_period=120, upsample=1, threshold=10., 
+                 max_iter, refrac_period=60, upsample=1, threshold=10., 
                  conv_approx_rank=5, n_processors=1,multi_processing=False,
                  vis_su=2., 
                  keep_iterations=False):
@@ -94,7 +110,8 @@ class MatchPursuit_objectiveUpsample(object):
 
         
         # Upsample and downsample time shifted versions
-        # Dynamic Upsampling Setup.
+        # Dynamic Upsampling Setup; function for upsampling based on PTP
+        # Cat: TODO find better ptp-> upsample function
         if upsample < 1:
             self.unit_up_factor = np.power(
                     2, np.floor(np.log2(np.max(temps.ptp(axis=0), axis=0))))
@@ -268,93 +285,105 @@ class MatchPursuit_objectiveUpsample(object):
     # Cat: TODO: Parallelize this function
     def pairwise_filter_conv_parallel(self):
     
-        units = np.unique(self.up_up_map)
+        # Cat: TODO: this may still crash memory in some cases; can split into additional bits
+        units = np.array_split(np.unique(self.up_up_map), self.n_processors)
         if self.multi_processing:
-            res = parmap.map(parallel_conv_filter, 
-                            units, 
-                            self.n_unit,
+            parmap.map(parallel_conv_filter, 
+                            list(zip(np.arange(len(units)),units)), 
                             self.n_time,
                             self.up_up_map,
                             self.unit_overlap,
                             self.up_factor,
-                            self.temporal,
-                            self.temporal_up,
-                            self.singular,
-                            self.spatial,
                             self.vis_chan,
                             self.approx_rank,
+                            self.deconv_dir,
                             processes=self.n_processors,
                             pm_pbar=True)
         else:
-            res = []
+            units = np.unique(self.up_up_map)
             for k in units:
                 print ("unit : ", k)
-                res.append(parallel_conv_filter( 
-                            units[k],
-                            self.n_unit,
+                parallel_conv_filter( 
+                            [k,[units[k]]],
                             self.n_time,
                             self.up_up_map,
                             self.unit_overlap,
                             self.up_factor,
-                            self.temporal,
-                            self.temporal_up,
-                            self.singular,
-                            self.spatial,
                             self.vis_chan,
-                            self.approx_rank))
-                
-        self.pairwise_conv = []
-        for i in range(self.n_unit):
-            self.pairwise_conv.append(None)
+                            self.approx_rank,
+                            self.deconv_dir)
         
+        # load temp_temp saved files from disk due to memory overload otherwise
+        temp_array = []
+        for i in range(len(units)):
+            fname = self.deconv_dir+'/temp_temp_chunk_'+str(i)+'.npy'
+            temp_pairwise_conv = np.load(fname)
+            temp_array.extend(temp_pairwise_conv)
+            os.remove(fname)
+
+        # initialize empty list and fill only correct locations
+        print ("  gathering temp_temp results...")
+        pairwise_conv=[]
+        for i in range(self.n_unit):
+            pairwise_conv.append(None)
+
         ctr=0
-        for unit2 in units:
-            self.pairwise_conv[unit2] = res[ctr]
+        for unit2 in np.unique(self.up_up_map):
+            pairwise_conv[unit2] = temp_array[ctr]
             ctr+=1
-            
+        
+        pairwise_conv = np.array(pairwise_conv)
+        print (pairwise_conv.shape)
+        
+        # save to disk, don't keep in memory
+        np.save(self.deconv_dir+"/pairwise_conv.npy", pairwise_conv)
+
+
+
     # Cat: TODO: Parallelize this function
     def pairwise_filter_conv(self):
         """Computes pairwise convolution of templates using SVD approximation."""
 
         if os.path.exists(self.deconv_dir+"/pairwise_conv.npy") == False:
 
-            if not self.multi_processing:
-            #if True:
-                #print ("  (todo parallelize pairse filter conv)...")
-                conv_res_len = self.n_time * 2 - 1
-                self.pairwise_conv = []
-                for i in range(self.n_unit):
-                    self.pairwise_conv.append(None)
-                available_upsampled_units = np.unique(self.up_up_map)
-                for unit2 in tqdm(available_upsampled_units, '  computing temptemp'):
-                    # Set up the unit2 conv all overlaping original units.
-                    n_overlap = np.sum(self.unit_overlap[unit2, :])
-                    self.pairwise_conv[unit2] = np.zeros([n_overlap, conv_res_len], dtype=np.float32)
-                    orig_unit = unit2 // self.up_factor
-                    masked_temp = np.flipud(np.matmul(
-                            self.temporal_up[unit2] * self.singular[orig_unit][None, :],
-                            self.spatial[orig_unit, :, :]))
-                    for j, unit1 in enumerate(np.where(self.unit_overlap[unit2, :])[0]):
-                        u, s, vh = self.temporal[unit1], self.singular[unit1], self.spatial[unit1] 
-                        vis_chan_idx = self.vis_chan[:, unit1]
+            # Cat: TODO: original temp_temp computation, do not erase it, keep
+            #           it for debugging and testing pursposes
+            #if not self.multi_processing:
+            ##if True:
+                #print (" turned multi-processing off here")
+                ##print ("  (todo parallelize pairse filter conv)...")
+                #conv_res_len = self.n_time * 2 - 1
+                #self.pairwise_conv = []
+                #for i in range(self.n_unit):
+                    #self.pairwise_conv.append(None)
+                #available_upsampled_units = np.unique(self.up_up_map)
+                #for unit2 in tqdm(available_upsampled_units, '  computing temptemp'):
+                    ## Set up the unit2 conv all overlaping original units.
+                    #n_overlap = np.sum(self.unit_overlap[unit2, :])
+                    #self.pairwise_conv[unit2] = np.zeros([n_overlap, conv_res_len], dtype=np.float32)
+                    #orig_unit = unit2 // self.up_factor
+                    #masked_temp = np.flipud(np.matmul(
+                            #self.temporal_up[unit2] * self.singular[orig_unit][None, :],
+                            #self.spatial[orig_unit, :, :]))
+                    #for j, unit1 in enumerate(np.where(self.unit_overlap[unit2, :])[0]):
+                        #u, s, vh = self.temporal[unit1], self.singular[unit1], self.spatial[unit1] 
+                        #vis_chan_idx = self.vis_chan[:, unit1]
 
-                        mat_mul_res = np.matmul(
-                                masked_temp[:, vis_chan_idx], vh[:self.approx_rank, vis_chan_idx].T)
-                        for i in range(self.approx_rank):
-                            self.pairwise_conv[unit2][j, :] += np.convolve(
-                                    mat_mul_res[:, i],
-                                    s[i] * u[:, i].flatten(), 'full')
+                        #mat_mul_res = np.matmul(
+                                #masked_temp[:, vis_chan_idx], vh[:self.approx_rank, vis_chan_idx].T)
+                        #for i in range(self.approx_rank):
+                            #self.pairwise_conv[unit2][j, :] += np.convolve(
+                                    #mat_mul_res[:, i],
+                                    #s[i] * u[:, i].flatten(), 'full')
                 
-                self.pairwise_conv = np.array(self.pairwise_conv)
+                #self.pairwise_conv = np.array(self.pairwise_conv)
+            #else:        
         
-            else:        
-        
-                self.pairwise_filter_conv_parallel()
+            self.pairwise_filter_conv_parallel()
                 
-            np.save(self.deconv_dir+"/pairwise_conv.npy", self.pairwise_conv)
 
-        else:
-            self.pairwise_conv = np.load(self.deconv_dir+'/pairwise_conv.npy')
+        #else:
+        #    self.pairwise_conv = np.load(self.deconv_dir+'/pairwise_conv.npy')
     
     
     def get_reconstructed_upsampled_templates(self):
@@ -692,7 +721,7 @@ class MatchPursuit_objectiveUpsample(object):
         self.data_len = self.data.shape[0]
         
         # load pairwise conv filter OR TRY TO USE GLOBAL SHARED VARIABLE
-        #self.pairwise_conv = np.load(self.deconv_dir+"/pairwise_conv.npy")
+        self.pairwise_conv = np.load(self.deconv_dir+"/pairwise_conv.npy")
         #self.pairwise_conv = pairwise_conv
 
         # update data
@@ -832,9 +861,7 @@ class MatchPursuitWaveforms(object):
             idx_in_chunk = np.where(np.logical_and(
                                     self.dec_spike_train[:,0]>=start-self.buffer_size,
                                     self.dec_spike_train[:,0]<end+self.buffer_size))[0]
-            
-            print (start, end)
-            
+
             spikes_in_chunk = self.dec_spike_train[idx_in_chunk]
             # reset spike times to zero for each chunk but add in bufer_size
             #  that will be read in with data 
@@ -898,15 +925,9 @@ class MatchPursuitWaveforms(object):
         unique_units = np.unique(local_spike_train[:,1])
         for i in unique_units:
             unit_sp = local_spike_train[local_spike_train[:, 1] == i, :]
-            
-            
 
             # subtract data from both the datachunk and blank version
             template_id = int(deconv_id_sparse_temp_map[i])
-            
-            # don't delete small templates
-            #if temps[:, :, template_id].ptp(0).max(0)<8.0:
-            #    continue
             
             data[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]
             data_blank[np.arange(0, n_time) + unit_sp[:, :1], :] -= temps[:, :, template_id]

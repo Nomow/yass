@@ -135,7 +135,8 @@ def run2(spike_train_cluster,
     #            multiprocessing module;
     buffer_size = 200
     standardized_filename = os.path.join(CONFIG.data.root_folder,
-                                        output_directory, recordings_filename)
+                                         output_directory, 
+                                         recordings_filename)
 
     # compute pairwise convolution filter outside match pursuit
     # Cat: TODO: make sure you don't miss chunks at end
@@ -164,6 +165,21 @@ def run2(spike_train_cluster,
         if not os.path.isdir(deconv_dir+'/initial/'):
             os.makedirs(deconv_dir+'/initial/')
 
+
+    # modify templates for steps below
+    templates = templates.swapaxes(1,2).swapaxes(0,1)
+
+    # Cat: TODO: fix this from CONFIG
+    if templates.shape[0] == 61:
+        spike_padding = 0
+        pass
+    elif templates.shape[0] == 111:
+        spike_padding = 25
+        templates = templates[spike_padding:-spike_padding]
+    else:
+        print ("  template array error!")
+        quit()
+
     chunk_size = initial_chunk
     for chunk_ctr, c in enumerate(range(0, len(idx_list), chunk_size)):
  
@@ -188,22 +204,23 @@ def run2(spike_train_cluster,
         # **** RUN MATCH PURSUIT & RESIDUAL COMP ****
         # *******************************************
         '''
-        (templates, 
-         sparse_upsampled_templates, 
+
+    
+        (sparse_upsampled_templates, 
          dec_spike_train, 
          deconv_id_sparse_temp_map, 
          spike_train_cluster_prev_iteration) = match_pursuit_function(
-                                                    CONFIG, 
-                                                    templates, 
-                                                    spike_train_cluster,
-                                                    deconv_chunk_dir,
-                                                    standardized_filename,
-                                                    max_iter,
-                                                    threshold,
-                                                    conv_approx_rank,
-                                                    idx_list_local, 
-                                                    chunk_ctr,
-                                                    buffer_size)
+                                        CONFIG, 
+                                        templates, 
+                                        spike_train_cluster,
+                                        deconv_chunk_dir,
+                                        standardized_filename,
+                                        max_iter,
+                                        threshold,
+                                        conv_approx_rank,
+                                        idx_list_local, 
+                                        chunk_ctr,
+                                        buffer_size)
         
         '''
         # *****************************************
@@ -247,6 +264,8 @@ def run2(spike_train_cluster,
     
     # run over rest of data in single chunk run:
     chunk_size = len(idx_list)
+    print (templates.shape)
+    #templates = templates.swapaxes(1,2)
     for chunk_ctr, c in enumerate(range(0, len(idx_list), chunk_size)):
  
         # select segments and chunk to be processed
@@ -259,6 +278,7 @@ def run2(spike_train_cluster,
             os.makedirs(deconv_chunk_dir+'/lost_units/')
 
         print (" TODO: don't recomp temp_temp for final step if prev. computed!")         
+        #templates = templates.swapaxes(1,2)
         match_pursuit_function(
                         CONFIG, 
                         templates, 
@@ -271,6 +291,7 @@ def run2(spike_train_cluster,
                         idx_list_local, 
                         chunk_ctr,
                         buffer_size)
+
         
 
     ''' 
@@ -436,6 +457,12 @@ def reclustering_function(CONFIG,
     data_start = idx[0]
     offset = idx[2]
 
+    residuaL_clustering_flag = False
+    if residuaL_clustering_flag:
+        print ("  reclustering using residuals ")
+    else:
+        print ("  reclustering using raw data ")
+
     buffer_size = 200
     standardized_filename = os.path.join(CONFIG.data.root_folder,
                                          output_directory, 
@@ -454,6 +481,7 @@ def reclustering_function(CONFIG,
 
     # make argument list
     args_in = []
+    #templates=templates.swapaxes(0,1)
     units = np.arange(templates.shape[2])
     for unit in units:
         fname_out = (deconv_chunk_dir+
@@ -468,7 +496,8 @@ def reclustering_function(CONFIG,
                             CONFIG2,
                             deconv_chunk_dir,
                             data_start,
-                            offset
+                            offset,
+                            residuaL_clustering_flag
                             ])
 
     # run residual-reclustering function
@@ -488,17 +517,14 @@ def reclustering_function(CONFIG,
         ************************************************************
     '''
     # run template merge
-    min_spikes = int(max(initial_chunk*n_sec_chunk*0.25,310))
     out_dir = 'deconv'
-                            
-    spike_train, tmp_loc, templates = global_merge_max_dist(
+    spike_train, templates = global_merge_max_dist(
                                           deconv_chunk_dir, recording_chunk,
-                                          CONFIG, min_spikes, out_dir, units)
+                                          CONFIG, out_dir, units)
 
     #print (templates_first_chunk.shape)
     np.savez(deconv_chunk_dir+"/deconv_results_post_recluster.npz", 
             spike_train=spike_train, 
-            tmp_loc=tmp_loc, 
             templates=templates)
     
     return templates, spike_train
@@ -523,13 +549,13 @@ def compute_residual_function(CONFIG, idx_list_local,
     
     #print (standardized_filename)
     # Cat: TODO: this is 
-    recording_chunk = binary_reader(idx_chunk, buffer_size, 
+    recording_chunk = binary_reader(idx_chunk, 
+                                    buffer_size, 
                                     standardized_filename, 
                                     n_channels)
-    np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/deconv/initial/chunk_000000/raw_total.npy', recording_chunk)
-    
+
+    #np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/deconv/initial/chunk_000000/raw_total.npy', recording_chunk)
     #data_size = recording_chunk.shape
-    
     
     # compute residual for data chunk and save to disk
     # Cat TODO: parallelize this and also figure out a faster way to 
@@ -589,7 +615,7 @@ def offset_spike_train(CONFIG, dec_spike_train_offset):
 
 def match_pursuit_function(CONFIG, 
                 templates, 
-                spike_train_cluster,
+                spike_train_cluster_prev_iteration,
                 deconv_chunk_dir,
                 standardized_filename,
                 max_iter,
@@ -611,9 +637,9 @@ def match_pursuit_function(CONFIG,
             round(idx_list_local[-1][1]/float(CONFIG.recordings.sampling_rate),1))
        
     # delete templates below certain treshold; and collision templates
-    templates, spike_train_cluster_prev_iteration = clean_templates(templates,
-                                                        spike_train_cluster,
-                                                        CONFIG)
+    #templates, spike_train_cluster_prev_iteration = clean_templates(templates,
+    #                                                    spike_train_cluster_prev_iteration,
+    #                                                    CONFIG)
     
     # initialize match pursuit
     # Cat: TODO: to read from CONFIG
@@ -631,7 +657,7 @@ def match_pursuit_function(CONFIG,
                               multi_processing=CONFIG.resources.multi_processing)
     
     print ("  running Match Pursuit...")
-    
+
     # find which sections within current chunk not complete
     args_in = []
     for k in range(len(idx_list_local)):
@@ -643,8 +669,7 @@ def match_pursuit_function(CONFIG,
                             chunk_ctr,
                             buffer_size])
 
-    if len(args_in)>0: 
-        
+    if len(args_in)>0:
         if CONFIG.resources.multi_processing:
             p = mp.Pool(processes = CONFIG.resources.n_processors)
             p.map_async(mp_object.run, args_in).get(988895)
@@ -689,7 +714,7 @@ def match_pursuit_function(CONFIG,
     sparse_upsampled_templates, deconv_id_sparse_temp_map = (
                             mp_object.get_sparse_upsampled_templates())
 
-    return (templates, sparse_upsampled_templates, dec_spike_train, 
+    return (sparse_upsampled_templates, dec_spike_train, 
             deconv_id_sparse_temp_map, spike_train_cluster_prev_iteration)
 
     
@@ -705,6 +730,7 @@ def deconv_residual_recluster(data_in):
     deconv_chunk_dir = data_in[6]
     data_start = data_in[7]
     offset = data_in[8]
+    residuaL_clustering_flag = data_in[9]
 
     # Cat: TODO: read this from CONFIG
     n_dim_pca_compression = 5
@@ -748,17 +774,18 @@ def deconv_residual_recluster(data_in):
         # Cat: TODO: here we add addtiional offset for buffer inside residual matrix
         # read waveforms by adding templates to residual
         spike_padding = 25
-        if False:
+        if residuaL_clustering_flag:
             #unit_sp[:,0]+=25
             wf = get_wfs_from_residual(unit_sp, 
                                        template, 
                                        deconv_chunk_dir,
                                        n_times)
+            print (wf.shape)
         else:    
             # read waveforms from recording chunk in memory
-            # load waveforms with some padding then clip them
+            # load waveforms with some padding then clip them below
             # Cat: TODO: spike_padding to be read/fixed in CONFIG
-            unit_sp[:,0]+=25
+            #unit_sp[:,0]+=25
             spike_size = template.shape[0]//2
             offset = 0
             wf = load_waveforms_from_memory(recording_chunk, 
@@ -768,6 +795,8 @@ def deconv_residual_recluster(data_in):
                                             spike_size)
         
         #np.save(deconv_chunk_dir+'/wfs_'+str(unit).zfill(6)+'.npy', wf)
+        # Cat: TODO: during deconv reclustering may not wish to exclude off-max
+        #               channel templates
         channel = wf.mean(0).ptp(0).argmax(0)
 
         # run mfm
@@ -828,13 +857,13 @@ def deconv_residual_recluster(data_in):
                 ax_t.text(CONFIG.geom[i,0], CONFIG.geom[i,1], str(i), alpha=0.4, 
                                                                 fontsize=30)
                 # fill bewteen 2SUs on each channel
-                ax_t.fill_between(CONFIG.geom[i,0] + np.arange(-n_times,0,1)/3.,
+                ax_t.fill_between(CONFIG.geom[i,0] + np.arange(-n_times//2,n_times//2,1)/3.,
                     -scale + CONFIG.geom[i,1], scale + CONFIG.geom[i,1], 
                     color='black', alpha=0.05)
                     
                 # plot original templates
                 ax_t.plot(CONFIG.geom[:,0]+
-                    np.arange(-template.shape[0],0)[:,np.newaxis]/3., 
+                    np.arange(-template.shape[0]//2,template.shape[0]//2,1)[:,np.newaxis]/3., 
                     CONFIG.geom[:,1] + template*scale, 'r--', c='red')
                         
             # plot max chan with big red dot                

@@ -101,7 +101,7 @@ def run(spike_index_clear,
                      CONFIG.recordings.sampling_rate//1000)
                      
         n_feat_chans = 5
-        mfm_threshold = 0.85
+        mfm_threshold = 0.90
         upsample_factor = 5
         nshifts = 15
         

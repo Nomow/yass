@@ -148,7 +148,7 @@ def run(config, logger_level='INFO', clean=False, output_dir='tmp/',
         cluster.run(spike_index_clear, spike_index_all)
 
     spike_train_cluster = np.load(path_to_spike_train_cluster)
-    templates_cluster = np.load(os.path.join(TMP_FOLDER,'templates.npy'))    
+    templates_cluster = np.load(os.path.join(TMP_FOLDER,'templates_cluster.npy'))    
 
     time_cluster = time.time()-start
     #print ("Spike train clustered: ", spike_index_cluster.shape, "spike train clear: ", 
