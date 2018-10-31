@@ -970,12 +970,8 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
         wf_align = wf
     
     if gen == 0:
-        stds = np.median(np.abs(wf - np.median(wf_align, axis=0, keepdims=True)), axis=0)*1.4826
-        active_chans = np.where(stds.max(0) > 1.05)[0]
-
         neighbors = n_steps_neigh_channels(CONFIG.neigh_channels, 1)
-        active_chans = np.hstack((active_chans, np.where(neighbors[channel])[0]))
-        active_chans = np.where(connected_channels(active_chans, channel, neighbors))[0]
+        active_chans = np.where(neighbors[channel])[0]
         
         #def plot_with_geom(data, geom, time_scale=0.5, scale=10, color='k', mark_channels=None):
         #    t, c = data.shape
@@ -2963,8 +2959,8 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
     spike_indexes = spike_train
 
 
-    np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/temps_align.npy', templates)
-    np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/spike_times_align.npy', spike_indexes)
+    #np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/temps_align.npy', templates)
+    #np.save('/media/cat/1TB/liam/49channels/data1_allset/tmp/spike_times_align.npy', spike_indexes)
 
     # delete templates below certain treshold; and collision templates
     # Cat: TODO: note, can't centre post-deconv rclustered tempaltes as they are tooshort
@@ -3000,7 +2996,7 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
     #quit()
 
     # option to skip merge step
-    if True:
+    if False:
         ''' ************************************************
             ********** COMPUTE SIMILARITY METRICS **********
             ************************************************
@@ -4519,21 +4515,21 @@ def clean_templates(templates, spike_train_cluster, CONFIG):
         print ("  deleted # collsion clusters: ", templates.shape[2]-idx.shape[0])
         
         templates = templates[:,:,idx]
-        spike_train_cluster_new = []
+        spike_train_cluster_new2 = []
         for ctr,k in enumerate(idx):
-            temp = np.where(spike_train_cluster[:,1]==k)[0]
+            temp = np.where(spike_train_cluster_new[:,1]==k)[0]
             temp_train = spike_train_cluster[temp]
             temp_train[:,1]=ctr
-            spike_train_cluster_new.append(temp_train)
+            spike_train_cluster_new2.append(temp_train)
             
-        spike_train_cluster_new = np.vstack(spike_train_cluster_new)
+        spike_train_cluster_new2 = np.vstack(spike_train_cluster_new2)
     else:
         print ("  not deleting collision clusters ")
         
         
     #quit()
     
-    return templates, spike_train_cluster_new
+    return templates, spike_train_cluster_new2
 
 
 def find_clean_templates(templates, CONFIG):
