@@ -9,6 +9,7 @@ from scipy.signal import argrelmax
 from scipy.spatial import cKDTree
 from copy import deepcopy
 import math
+from yass.mfm import vbPar
 from sklearn.cluster import AgglomerativeClustering
 
 from yass.explore.explorers import RecordingExplorer
@@ -990,15 +991,13 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
         #plt.figure(figsize=(30,20))
         #plot_with_geom(stds, CONFIG.geom, time_scale=2, scale=10, color='k', mark_channels=active_chans)
         #plt.savefig(chunk_dir+"/channel_{}_active_chans.png".format(channel))
-        
+    active_chans = np.arange(49, dtype = int)
     # Cat: TODO: so we force all subsequent generations to use gen0 alignment
     #wf=wf_align
-        
     ''' ************************************************        
         ****** FIND FEATURE CHANNELS & FEATURIZE *******
         ************************************************
     '''
-    
     if verbose:
         print("chan/unit "+str(channel)+' gen: '+str(gen)+' getting feat chans')
     
@@ -1007,6 +1006,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
     feat_chans, mc, robust_stds = get_feat_channels_mad_cat(
                                             wf_align[:10000][:, :, active_chans], n_feat_chans)
 
+       
     # featurize using latest alg
     idx_keep_feature, pca_wf = featurize_residual_triage_cat(wf_align[:, :, active_chans], robust_stds, 
                                                   feat_chans, mc, n_feat_chans)
@@ -1085,12 +1085,30 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
 
 
     idx_recovered = np.where(assignment2!=-1)[0]
-    if verbose:
-        print ("chan "+ str(channel)+' gen: '+str(gen)+" - recovered ",
-                                            str(idx_recovered.shape[0]))
+#     if verbose:
+#         print ("chan "+ str(channel)+' gen: '+str(gen)+" - recovered ",
+#                                             str(idx_recovered.shape[0]))
     
     # make a template that in case the cluster is saved, can be used below
     # Cat: TODO: can take template to be just core of cluster 
+    
+    
+#     vbParam2, assignment2, idx_recovered =  garbage_collector(vbParam, pca_wf_all, CONFIG)
+    
+    if verbose:
+        print ("chan "+ str(channel)+' gen: '+str(gen)+" - recovered ",
+                                            str(idx_recovered.shape[0]))
+
+    if idx_recovered.size == 0:
+        return
+    
+    
+    
+    
+    
+    
+    
+    
     template = wf_align[idx_keep][idx_recovered].mean(0)
     mc = np.argmax(template.ptp(0))
     sic_current = sic_global[current_indexes][idx_keep][idx_recovered]
@@ -1119,7 +1137,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                     " skipping ...")
             
             # always plot scatter distributions
-            if gen<20:
+            if gen<50:
                 split_type = 'mfm non_max-chan'
                 end_flag = 'cyan'
                 plot_clustering_scatter(fig, 
@@ -1161,7 +1179,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                                          CONFIG, colors, feat_chans, scale)
 
                 # always plot scatter distributions
-                if gen<20:
+                if gen<50:
                     split_type = 'mfm'
                     end_flag = 'red'
                     plot_clustering_scatter(fig, 
@@ -1175,34 +1193,86 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                             
     # Case #2: multiple clusters
     else:
-        mask = vbParam2.rhat[idx_recovered]>0
-        stability = np.average(mask * vbParam2.rhat[idx_recovered], axis = 0, weights = mask)
+        
+        
+        rhat = vbParam2.rhat[idx_recovered]
+        rhat[rhat<0.001] = 0.0
+        rhat = rhat/rhat.sum(1, keepdims = True)
+       
+        mask = rhat >0
+        
+        stability = np.zeros(rhat.shape[1])
+        for clust in range(stability.size):
+            if mask[:,clust].sum() == 0.0:
+                continue
+            stability[clust] = np.average(mask[:,clust] * rhat[:,clust], axis = 0, weights = mask[:,clust])
+        
+        
+        
+#         mask = vbParam2.rhat[idx_recovered]>0
+#         stability = np.average(mask * vbParam2.rhat[idx_recovered], axis = 0, weights = mask)
         clusters, sizes = np.unique(assignment2[idx_recovered], return_counts = True)
         
         if verbose:
             print("chan "+str(channel)+' gen: '+str(gen) + 
                   " multiple clusters, stability " + str(np.round(stability,2)) + 
                   " size: "+str(sizes))
+        
+        vbParam3, assignment3, stability2 = cluster_annealing(vbParam2, assignment2, idx_recovered)
+        clusters2, sizes2 = np.unique(assignment3, return_counts = True)
+        
+        if verbose:
+            print("chan "+str(channel)+' gen: '+str(gen) + 
+                  " post annealing, stability " + str(np.round(stability2,2)) + 
+                  " size: "+str(sizes2))
 
-        # if at least one stable cluster
-        if np.any(stability>mfm_threshold):      
-
-            # always plot scatter distributions
-            if plotting and gen<20:
-                split_type = 'mfm multi split'
+            
+        if np.any(vbParam.nuhat>100):
+            if gen<50 and plotting:
+                split_type = 'pre_removal'
                 plot_clustering_scatter(fig, 
-                            grid, x, gen,  
-                            assignment2[idx_recovered],
-                            pca_wf_all[idx_recovered], 
-                            vbParam2.rhat[idx_recovered],
-                            channel,
-                            split_type)
-                            
+                        grid, x, gen,  
+                        assignment2,
+                        pca_wf_all, 
+                        vbParam2.rhat,
+                        channel, 
+                        split_type)    
+            
+            
+            
+            
+        if plotting and gen<50:
+            split_type = 'post_removal'
+            plot_clustering_scatter(fig, 
+                        grid, x, gen,  
+                        assignment2[idx_recovered],
+                        pca_wf_all[idx_recovered],
+                        vbParam2.rhat[idx_recovered],
+                        channel,
+                        split_type)
+            
+
+
+        if gen<50 and plotting:
+            split_type = 'strongly connected components'
+            plot_clustering_scatter(fig, 
+                    grid, x, gen,  
+                    assignment3,
+                    pca_wf_all[idx_recovered], 
+                    vbParam3.rhat,
+                    channel, 
+                    split_type)
+        
+        
+        
+        
+        # if at least one stable cluster
+        if np.any(stability2>mfm_threshold):      
 
             # remove stable clusters 
-            for clust in np.where(stability>mfm_threshold)[0]:
+            for clust in np.where(stability2>mfm_threshold)[0]:
 
-                idx = np.where(assignment2[idx_recovered]==clust)[0]
+                idx = np.where(assignment3==clust)[0]
                 
                 if idx.shape[0]<CONFIG.cluster.min_spikes: 
                     continue    # cluster too small
@@ -1223,7 +1293,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                      deconv_flag, templates, min_spikes_local, active_chans)
 
             # run mfm on remaining data
-            idx = np.in1d(assignment2[idx_recovered], np.where(stability<=mfm_threshold)[0])
+            idx = np.in1d(assignment3, np.where(stability2<=mfm_threshold)[0])
             if idx.sum()>CONFIG.cluster.min_spikes:
                 #print ("chan "+str(channel)+' gen: '+str(gen)+ " CASE #4: clustering residuals")
                 if verbose:
@@ -1246,169 +1316,117 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
         # ********** if all clusters are unstable ****************
         # ********** check diptest 
         else:
+            if verbose:
+                print("chan "+str(channel)+' gen: '+str(gen)+ 
+                                " no stable clusters, connected_components_split "+
+                                str(idx_recovered.size), stability2)
+            for clust in np.unique(assignment3): #np.where(stability>mfm_threshold)[0]:
+                idx = np.where(assignment3==clust)[0]
 
-            ctr=0 
-            dp = 1.0
-            idx_temp_keep = np.arange(idx_recovered.shape[0])
-            cluster_idx_keep = np.arange(vbParam2.muhat.shape[0])
-            # loop over cluster until at least 3 loops and take lowest dp value
-            while True:    
-                # use EM aglorithm to get labels for 2 clusters
-                if True: 
-                    # split using EM
-                    gmm = GaussianMixture(n_components=2)
-                    gmm.fit(pca_wf_all[idx_recovered])
-                    labels = gmm.predict_proba(pca_wf_all[idx_recovered])
-
-                    temp_rhat = labels
-                    temp_assignment = np.zeros(labels.shape[0], 'int32')
-                    idx = np.where(labels[:,1]>0.5)[0]
-                    temp_assignment[idx]=1
-                
-                else:
-                   # split using mfm 
-                    temp_assignment = mfm_binary_split2(
-                                        vbParam2.muhat[cluster_idx_keep], 
-                                        assignment2[idx_recovered],
-                                        cluster_idx_keep)
-                                        
-                    
-                # check if any clusters smaller than min spikes
-                counts = np.unique(temp_assignment, return_counts=True)[1]
-
-                # update indexes if some clusters too small
-                if min(counts)<CONFIG.cluster.min_spikes:
-                    bigger_cluster_id = np.argmax(counts)
-                    idx_temp_keep = np.where(temp_assignment==bigger_cluster_id)[0]
-                    idx_recovered = idx_recovered[idx_temp_keep]
-
-                    cluster_idx_keep = np.unique(assignment2[idx_recovered])
-                    
-                    # exit if cluster gets decimated below threshld
-                    if idx_recovered.shape[0]<CONFIG.cluster.min_spikes:
-                        return
-                    
-                else:
-                    # test EM for unimodality
-                    dp_new = test_unimodality(pca_wf_all[idx_recovered], temp_assignment)
-                    
-                    # set initial values
-                    if ctr==0:
-                        assignment3 = temp_assignment
-                    
-                    # reset values for lower scores
-                    if dp_new <dp:
-                        dp= dp_new
-                        assignment3 = temp_assignment
-                    
-                    if ctr>2:
-                        # need to also ensure that we've not deleted any spikes after we
-                        #  saved the last lowest-dp avlue assignment
-                        if assignment3.shape[0] != temp_assignment.shape[0]:
-                            assignment3 = temp_assignment
-                        break
-                    
-                    ctr+=1
-            
-            # cluster is unimodal, save it: 
-            # Cat: TODO : read values from file
-            diptest_thresh = 0.995
-            norm_thresh = 1E-4
-            # don' exit on gen0 split ever
-            if (dp> diptest_thresh and gen!=0):
-            #if (dp> diptest_thresh) and (norm>norm_thresh):
-                # make sure cluster on max chan            
-                if mc != channel and (deconv_flag==False): 
-                    print ("  channel: ", channel, " template has maxchan: ", mc, 
-                            " skipping ...")
-                    
-                    # always plot scatter distributions
-                    if gen<20:
-                        split_type = 'mfm-binary - non max chan'
-                        end_flag = 'cyan'                       
-                        plot_clustering_scatter(fig, 
-                            grid, x, gen,  
-                            assignment2[idx_recovered],
-                            pca_wf_all[idx_recovered], 
-                            vbParam2.rhat[idx_recovered],
-                            channel,
-                            split_type,
-                            end_flag)
-                                
-                    return 
-                
-                N= len(assignment_global)
-                if verbose:
-                    print("chan "+str(channel)+' gen: '+str(gen)+" >>> cluster "+
-                        str(N)+" saved, size: "+str(idx_recovered.shape)+"<<<")
-                
-                assignment_global.append(N * np.ones(assignment3.shape[0]))
-                spike_index.append(sic_current)
-                templates.append(template)
-
-                # plot template if done
-                if plotting:
-                    plot_clustering_template(fig, grid, ax_t, gen, N, 
-                                         template, 
-                                         idx_recovered, 
-                                         CONFIG, colors, feat_chans, scale)
-                                         
-                    # always plot scatter distributions
-                    if gen<20:
-                        # hack to expand the assignments back out to size of original
-                        # data stream
-                        assignment3 = np.zeros(pca_wf_all[idx_recovered].shape[0],'int32')
-                        split_type = 'mfm-binary, dp: '+ str(round(dp,5))
-                        end_flag = 'green'
-                        plot_clustering_scatter(fig, 
-                            grid, x, gen,  
-                            assignment3,
-                            pca_wf_all[idx_recovered], 
-                            vbParam2.rhat[idx_recovered],
-                            channel,
-                            split_type,
-                            end_flag)       
-                                        
-            # cluster is not unimodal, split it along binary split and recluster 
-            else:
-                # plot EM labeled data
-                if gen<20 and plotting:
-                    split_type = 'mfm-binary, dp: '+ str(round(dp,5))
-                    plot_clustering_scatter(fig, 
-                            grid, x, gen,  
-                            assignment3,
-                            pca_wf_all[idx_recovered], 
-                            vbParam2.rhat[idx_recovered],
-                            channel,
-                            split_type)
+                if idx.shape[0]<CONFIG.cluster.min_spikes: 
+                    continue    # cluster too small
 
                 if verbose:
-                    print("chan "+str(channel)+' gen: '+str(gen)+ 
-                                    " no stable clusters, binary split "+
-                                    str(idx_recovered.shape))
+                    print("chan "+str(channel)+' gen: '+str(gen)+
+                        " reclustering cluster"+ 
+                        str(idx.shape))
 
-                # loop over binary split
-                for clust in np.unique(assignment3): #np.where(stability>mfm_threshold)[0]:
-                    idx = np.where(assignment3==clust)[0]
-                    
-                    if idx.shape[0]<CONFIG.cluster.min_spikes: 
-                        continue    # cluster too small
-                    
-                    if verbose:
-                        print("chan "+str(channel)+' gen: '+str(gen)+
-                            " reclustering cluster"+ 
-                            str(idx.shape))
-                    
-                    triageflag = False
-                    alignflag = True
-                    RRR3_noregress_recovery_dynamic_features(channel, 
-                         current_indexes[idx_keep][idx_recovered][idx], 
-                         gen+1, fig, grid, x, ax_t, triageflag, alignflag, 
-                         plotting, n_feat_chans, n_dim_pca, wf_start, wf_end, 
-                         mfm_threshold,  CONFIG, upsample_factor, nshifts, 
-                         assignment_global, spike_index, scale, knn_triage_threshold, 
-                         deconv_flag, templates, min_spikes_local, active_chans)
+                triageflag = False
+                alignflag = True
+                RRR3_noregress_recovery_dynamic_features(channel, 
+                    current_indexes[idx_keep][idx_recovered][idx],
+                    gen+1, fig, grid, x, ax_t, triageflag, alignflag, 
+                    plotting, n_feat_chans, n_dim_pca, wf_start, wf_end, 
+                    mfm_threshold, CONFIG, upsample_factor, nshifts, 
+                    assignment_global, spike_index, scale, knn_triage_threshold,
+                    deconv_flag, templates, min_spikes_local, active_chans)
 
+def cluster_annealing(vbParam, assignment, idx_recovered):
+    mu = vbParam.muhat[:,:,0].T
+    mudiff = mu[:,np.newaxis] - mu
+    prec = vbParam.Vhat[:,:,:,0].T * vbParam.nuhat[:,np.newaxis, np.newaxis]
+    maha = np.matmul(np.matmul(mudiff[:,:,np.newaxis], prec[:,np.newaxis]), mudiff[:,:,:, np.newaxis])
+    maha = maha[:,:, 0,0]
+
+    flag = True
+    maha_thresh = 5
+    maha_thresh_max = 15
+    ctr = 0
+       
+    while flag and ctr <200:
+        row, column = np.where(maha<maha_thresh)
+        G = nx.DiGraph()
+        for i in np.unique(assignment[idx_recovered]):
+            G.add_node(i)
+        for i, j in zip(row,column):
+            G.add_edge(i, j, weight = maha[i,j])
+
+        assignment3 = assignment[idx_recovered].copy()
+        rhat = np.zeros([assignment[idx_recovered].size,0])
+        
+        for i, units in enumerate(nx.strongly_connected_components(G)):
+            idx =  np.in1d(assignment[idx_recovered], list(units))
+            assignment3[idx] = i
+            if len(units) == 1:
+                rhat = np.concatenate([rhat,vbParam.rhat[idx_recovered][:, list(units)]], axis = 1)
+            else:                       
+                rhat = np.concatenate([rhat,vbParam.rhat[idx_recovered][:, list(units)].sum(1, keepdims = True)], axis = 1)
+
+        rhat[rhat<0.1] = 0.0
+        rhat = rhat/np.sum(rhat,axis =1 ,keepdims = True)
+        mask = rhat > 0.0
+        
+        
+        stability = np.zeros(rhat.shape[1])
+        for clust in range(stability.size):
+            if mask[:,clust].sum() == 0.0:
+                continue
+            stability[clust] = np.average(mask[:,clust] * rhat[:,clust], axis = 0, weights = mask[:,clust])
+        
+        vbParam3 = vbPar(rhat)
+        
+        if np.unique(assignment3).size == np.unique(assignment).size and np.unique(assignment).size!=2:
+            maha_thresh = maha_thresh * 1.05
+        elif np.unique(assignment3).size == 1:
+            maha_thresh = maha_thresh * 0.95
+        else:
+            flag = False
+        ctr += 1
+    
+    return vbParam3, assignment3, stability
+
+def garbage_collector(vbParam, pca_wf_all, CONFIG):
+    f_min = 0.0005 * 20000 #(0.0005 hz)
+    cov_exist  = vbParam.invVhat[:,:,:,0].T / vbParam.nuhat[:,np.newaxis, np.newaxis]
+    if np.any(vbParam.nuhat>100):
+        med_cov_det = np.median(np.linalg.det(cov_exist[vbParam.nuhat>100]))
+        cov =  10 * np.cov(pca_wf_all.T)
+        weight = f_min * np.sqrt(np.linalg.det(cov))/ np.sqrt(med_cov_det)
+        
+        nu = 5 + weight
+        invVhat = cov * nu
+        Vhat = np.linalg.inv(invVhat)
+        muhat = pca_wf_all.mean(0)
+
+        vbParam2 = deepcopy(vbParam)
+
+        vbParam2.rhat = np.concatenate([vbParam2.rhat, np.zeros([vbParam2.rhat.shape[0], 1])], axis = 1)
+        vbParam2.Vhat = np.concatenate([vbParam2.Vhat, Vhat[:, :, np.newaxis, np.newaxis]], axis = 2)
+        vbParam2.invVhat = np.concatenate([vbParam2.invVhat, invVhat[:, :, np.newaxis, np.newaxis]], axis = 2)
+        vbParam2.muhat = np.concatenate([vbParam2.muhat, muhat[:,np.newaxis, np.newaxis]], axis = 1)
+        vbParam2.lambdahat = np.concatenate([vbParam2.lambdahat, np.array([0.01 + weight])])
+        vbParam2.ahat = np.concatenate([vbParam2.ahat, np.array([1+ weight])])
+        vbParam2.nuhat = np.concatenate([vbParam2.nuhat, np.array([5+ weight])])
+
+        vbParam2, assignment2 = recover_spikes(vbParam2, pca_wf_all, CONFIG)
+        idx_recovered = np.where(assignment2 != vbParam.rhat.shape[1])[0]
+        assignment2[assignment2 == vbParam.rhat.shape[1]] = -1
+        
+    else:
+        vbParam2, assignment2 = recover_spikes(vbParam, pca_wf_all, CONFIG)
+        idx_recovered = np.arange(vbParam2.rhat.shape[0])
+
+    return vbParam2, assignment2, idx_recovered
         
         
 #def cluster_iterative_dynamic_features_connected_components(channel, wf, sic, gen, fig, 
@@ -1906,7 +1924,7 @@ def plot_clustering_scatter(fig, grid, x, gen,
                             end_point='false'):
                                                        
                             
-    if np.all(x[gen]<20) and (gen <20):
+    if np.all(x[gen]<50) and (gen <50):
 
         # add generation index
         ax = fig.add_subplot(grid[gen, x[gen]])
@@ -2318,6 +2336,7 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
     # determine length of processing chunk based on lenght of rec
     standardized_filename = os.path.join(CONFIG.data.root_folder, out_dir,
                                          'standarized.bin')
+    standardized_filename = '/ssd/data/Nishchal/yass/src/data/sept_3/standarized.bin'
     fp = np.memmap(standardized_filename, dtype='float32', mode='r')
     fp_len = fp.shape[0]
 
@@ -2378,6 +2397,7 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
         buffer_size = 200
         standardized_filename = os.path.join(CONFIG.data.root_folder,
                                             'tmp', 'standarized.bin')
+        standardized_filename = '/ssd/data/Nishchal/yass/src/data/sept_3/standarized.bin'
         n_channels = CONFIG.recordings.n_channels
         root_folder = CONFIG.data.root_folder
         
@@ -2398,6 +2418,7 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
                                                     str(proc_index).zfill(6)
         channels = np.arange(CONFIG.recordings.n_channels)
         args_in = []
+        channels = [45]
         for channel in channels:
         #for channel in [31,32,15,45]:
         #for channel in [6,15,45,31,32]:
@@ -2449,6 +2470,7 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
             standardized_filename = os.path.join(CONFIG.data.root_folder,
                                                 'tmp', 
                                                 'standarized.bin')
+            standardized_filename = '/ssd/data/Nishchal/yass/src/data/sept_3/standarized.bin'
             n_channels = CONFIG.recordings.n_channels
             root_folder = CONFIG.data.root_folder
             
@@ -2657,8 +2679,8 @@ def cluster_channels_chunks_args(data_in):
             # Cat: TODO: this global x is not necessary, should make it local
             x = np.zeros(100, dtype = int)
             fig = plt.figure(figsize =(100,100))
-            grid = plt.GridSpec(20,20,wspace = 0.0,hspace = 0.2)
-            ax_t = fig.add_subplot(grid[13:, 6:])
+            grid = plt.GridSpec(50,50,wspace = 0.0,hspace = 0.2)
+            ax_t = fig.add_subplot(grid[25:, 20:])
         else:
             fig = []
             grid = []
@@ -3803,7 +3825,7 @@ def chunk_merge(chunk_dir, channels, CONFIG):
     spike_indexes = []
     channels = np.arange(n_channels)
     tmp_loc = []
-    
+    channels = [45]
     for channel in channels:
         data = np.load(chunk_dir+'/channel_{}.npz'.format(channel), encoding='latin1')
         templates.append(data['templates'])
