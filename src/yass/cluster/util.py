@@ -970,13 +970,13 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
         wf_align = wf
     
     if gen == 0:
-        stds = np.median(np.abs(wf - np.median(wf_align, axis=0, keepdims=True)), axis=0)*1.4826
+        stds = np.median(np.abs(wf_align - np.median(wf_align, axis=0, keepdims=True)), axis=0)*1.4826
         active_chans = np.where(stds.max(0) > 1.05)[0]
 
         neighbors = n_steps_neigh_channels(CONFIG.neigh_channels, 1)
         active_chans = np.hstack((active_chans, np.where(neighbors[channel])[0]))
         active_chans = np.where(connected_channels(active_chans, channel, neighbors))[0]
-        
+        active_chans = np.arange(49)
         #def plot_with_geom(data, geom, time_scale=0.5, scale=10, color='k', mark_channels=None):
         #    t, c = data.shape
         #    plt.plot(geom[:,0]+np.arange(-data.shape[0],0)[:,np.newaxis]/time_scale, 
@@ -990,7 +990,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
         #plt.figure(figsize=(30,20))
         #plot_with_geom(stds, CONFIG.geom, time_scale=2, scale=10, color='k', mark_channels=active_chans)
         #plt.savefig(chunk_dir+"/channel_{}_active_chans.png".format(channel))
-        
+    
     # Cat: TODO: so we force all subsequent generations to use gen0 alignment
     #wf=wf_align
         
@@ -1011,11 +1011,20 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
     idx_keep_feature, pca_wf = featurize_residual_triage_cat(wf_align[:, :, active_chans], robust_stds, 
                                                   feat_chans, mc, n_feat_chans)
     
+    #feat_chans, mc, robust_stds = get_feat_channels_mad4(
+    #                                        wf_align[:10000][:, :, active_chans], n_feat_chans)
+
+    # featurize using latest alg
+    #idx_keep_feature, pca_wf = featurize_residual_triage4(wf_align[:, :, active_chans[feat_chans]], robust_stds[:, feat_chans])
+    
     if verbose:
         print("chan "+str(channel)+' gen: '+str(gen)+", feat chans: "+
-                  str(feat_chans[:n_feat_chans]) + ", max_chan: "+ str(active_chans[mc]))
+                  str(active_chans[feat_chans[:n_feat_chans]]) + ", max_chan: "+ str(active_chans[mc]))
+        #print("chan "+str(channel)+' gen: '+str(gen)+", feat chans: "+
+        #          str(active_chans[feat_chans]) + ", max_chan: "+ str(active_chans[mc]))
 
     pca_wf = pca_wf[idx_keep_feature][:,:5]
+    #pca_wf = pca_wf[idx_keep_feature]
  
     ''' ************************************************        
         ******** KNN TRIAGE & PCA #2 *******************
@@ -1091,9 +1100,8 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
     
     # make a template that in case the cluster is saved, can be used below
     # Cat: TODO: can take template to be just core of cluster 
-    template = wf_align[idx_keep][idx_recovered].mean(0)
-    mc = np.argmax(template.ptp(0))
-    sic_current = sic_global[current_indexes][idx_keep][idx_recovered]
+    wf_current = wf_align[idx_keep_feature][idx_keep]
+    mc = np.argmax(wf_current[idx_recovered].mean(0).ptp(0))
     
     # zero out all wf arrays; not required below here any longer
     wf = None
@@ -1140,7 +1148,8 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                 print ("")
             
             assignment_global.append(N * np.ones(assignment2[idx_recovered].shape[0]))
-            spike_index.append(sic_current)
+            spike_index.append(sic_global[current_indexes][idx_keep_feature][idx_keep][idx_recovered])
+            template = wf_current[idx_recovered].mean(0)
             templates.append(template)
             
             ## Save only core of distribution
@@ -1215,7 +1224,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                 triageflag = False
                 alignflag = True
                 RRR3_noregress_recovery_dynamic_features(channel, 
-                     current_indexes[idx_keep][idx_recovered][idx], 
+                     current_indexes[idx_keep_feature][idx_keep][idx_recovered][idx], 
                      gen+1, fig, grid, x, ax_t, triageflag, alignflag, 
                      plotting, n_feat_chans, n_dim_pca, wf_start, wf_end, 
                      mfm_threshold,  CONFIG, upsample_factor, nshifts, 
@@ -1234,7 +1243,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                 
                 # overwrite wf with current index to remove data from memory
                 RRR3_noregress_recovery_dynamic_features(channel, 
-                    current_indexes[idx_keep][idx_recovered][idx],
+                    current_indexes[idx_keep_feature][idx_keep][idx_recovered][idx],
                     gen+1, fig, grid, x, ax_t, triageflag, alignflag, 
                     plotting, n_feat_chans, n_dim_pca, wf_start, wf_end, 
                     mfm_threshold, CONFIG, upsample_factor, nshifts, 
@@ -1343,7 +1352,8 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                         str(N)+" saved, size: "+str(idx_recovered.shape)+"<<<")
                 
                 assignment_global.append(N * np.ones(assignment3.shape[0]))
-                spike_index.append(sic_current)
+                spike_index.append(sic_global[current_indexes][idx_keep_feature][idx_keep][idx_recovered])
+                template = wf_current[idx_recovered].mean(0)
                 templates.append(template)
 
                 # plot template if done
@@ -1402,7 +1412,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                     triageflag = False
                     alignflag = True
                     RRR3_noregress_recovery_dynamic_features(channel, 
-                         current_indexes[idx_keep][idx_recovered][idx], 
+                         current_indexes[idx_keep_feature][idx_keep][idx_recovered][idx], 
                          gen+1, fig, grid, x, ax_t, triageflag, alignflag, 
                          plotting, n_feat_chans, n_dim_pca, wf_start, wf_end, 
                          mfm_threshold,  CONFIG, upsample_factor, nshifts, 
@@ -1955,7 +1965,7 @@ def get_feat_channels_mad_cat(wf, n_feat_chans):
     '''
 
     # compute robust stds over units
-    stds = np.median(np.abs(wf - np.median(wf, axis=0, keepdims=True)), axis=0)*1.4826
+    stds = robust_stds(wf)
    
     # max per channel
     std_max = stds.max(0)
@@ -1972,7 +1982,8 @@ def get_feat_channels_mad_cat(wf, n_feat_chans):
     
 
 def robust_stds(data):
-    return np.median(np.abs(data - np.median(data, axis=0, keepdims=True)), axis=0)*1.4826
+    return np.std(stats.trimboth(data, 0.025), 0)
+    #return np.median(np.abs(data - np.median(data, axis=0, keepdims=True)), axis=0)*1.4826
     
 def get_feat_channels_mad4(wf, n_feat_chans):
     '''  Function that uses MAD statistic like robust variance estimator to select channels
@@ -2998,7 +3009,7 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
     np.save(chunk_dir + '/spike_train_post_'+out_dir+'_before_merge_before_cutoff.npy', spike_indexes)
 
     # option to skip merge step
-    if True:
+    if False:
         ''' ************************************************
             ********** COMPUTE SIMILARITY METRICS **********
             ************************************************
@@ -4513,7 +4524,7 @@ def clean_templates(templates, spike_train_cluster, CONFIG):
         ************* DELETE COLLISION TEMPLATES **********
         ***************************************************
     '''
-    if True:
+    if False:
         idx = find_clean_templates(templates, CONFIG)
         print ("  deleted # collsion clusters: ", templates.shape[2]-idx.shape[0])
         
@@ -4527,6 +4538,7 @@ def clean_templates(templates, spike_train_cluster, CONFIG):
             
         spike_train_cluster_new2 = np.vstack(spike_train_cluster_new2)
     else:
+        spike_train_cluster_new2 = spike_train_cluster_new
         print ("  not deleting collision clusters ")
         
         
