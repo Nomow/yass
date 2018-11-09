@@ -1149,7 +1149,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
             
             assignment_global.append(N * np.ones(assignment2[idx_recovered].shape[0]))
             spike_index.append(sic_global[current_indexes][idx_keep_feature][idx_keep][idx_recovered])
-            template = wf_current[idx_recovered].mean(0)
+            template = np.median(wf_current[idx_recovered], 0)
             templates.append(template)
             
             ## Save only core of distribution
@@ -1353,7 +1353,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                 
                 assignment_global.append(N * np.ones(assignment3.shape[0]))
                 spike_index.append(sic_global[current_indexes][idx_keep_feature][idx_keep][idx_recovered])
-                template = wf_current[idx_recovered].mean(0)
+                template = np.median(wf_current[idx_recovered],0)
                 templates.append(template)
 
                 # plot template if done
@@ -1982,7 +1982,7 @@ def get_feat_channels_mad_cat(wf, n_feat_chans):
     
 
 def robust_stds(data):
-    return np.std(stats.trimboth(data, 0.025), 0)
+    return np.std(stats.trimboth(data, 0.1), 0)
     #return np.median(np.abs(data - np.median(data, axis=0, keepdims=True)), axis=0)*1.4826
     
 def get_feat_channels_mad4(wf, n_feat_chans):
@@ -3009,7 +3009,7 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
     np.save(chunk_dir + '/spike_train_post_'+out_dir+'_before_merge_before_cutoff.npy', spike_indexes)
 
     # option to skip merge step
-    if False:
+    if True:
         ''' ************************************************
             ********** COMPUTE SIMILARITY METRICS **********
             ************************************************
@@ -4524,7 +4524,7 @@ def clean_templates(templates, spike_train_cluster, CONFIG):
         ************* DELETE COLLISION TEMPLATES **********
         ***************************************************
     '''
-    if False:
+    if True:
         idx = find_clean_templates(templates, CONFIG)
         print ("  deleted # collsion clusters: ", templates.shape[2]-idx.shape[0])
         
