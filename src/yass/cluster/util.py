@@ -975,7 +975,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
 
         neighbors = n_steps_neigh_channels(CONFIG.neigh_channels, 1)
         active_chans = np.hstack((active_chans, np.where(neighbors[channel])[0]))
-        active_chans = np.where(connected_channels(active_chans, channel, neighbors))[0]
+        #active_chans = np.where(connected_channels(active_chans, channel, neighbors))[0]
         active_chans = np.arange(49)
         #def plot_with_geom(data, geom, time_scale=0.5, scale=10, color='k', mark_channels=None):
         #    t, c = data.shape
@@ -1149,7 +1149,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
             
             assignment_global.append(N * np.ones(assignment2[idx_recovered].shape[0]))
             spike_index.append(sic_global[current_indexes][idx_keep_feature][idx_keep][idx_recovered])
-            template = np.median(wf_current[idx_recovered], 0)
+            template = np.mean(wf_current[idx_recovered], 0)
             templates.append(template)
             
             ## Save only core of distribution
@@ -1353,7 +1353,7 @@ def RRR3_noregress_recovery_dynamic_features(channel, current_indexes, gen, fig,
                 
                 assignment_global.append(N * np.ones(assignment3.shape[0]))
                 spike_index.append(sic_global[current_indexes][idx_keep_feature][idx_keep][idx_recovered])
-                template = np.median(wf_current[idx_recovered],0)
+                template = np.mean(wf_current[idx_recovered],0)
                 templates.append(template)
 
                 # plot template if done
@@ -1982,7 +1982,7 @@ def get_feat_channels_mad_cat(wf, n_feat_chans):
     
 
 def robust_stds(data):
-    return np.std(stats.trimboth(data, 0.1), 0)
+    return np.std(stats.trimboth(data, 0.025), 0)
     #return np.median(np.abs(data - np.median(data, axis=0, keepdims=True)), axis=0)*1.4826
     
 def get_feat_channels_mad4(wf, n_feat_chans):
