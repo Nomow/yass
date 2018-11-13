@@ -2647,7 +2647,10 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
                                                     str(proc_index).zfill(6)
         channels = np.arange(CONFIG.recordings.n_channels)
         args_in = []
+<<<<<<< HEAD
 #         channels = [45]
+=======
+>>>>>>> 3e780050d5e25be49882d9cf4b98e8e5582667dd
         for channel in channels:
         #for channel in [31,32,15,45]:
         #for channel in [6,15,45,31,32]:
