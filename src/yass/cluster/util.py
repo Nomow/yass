@@ -2389,7 +2389,7 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
         print ("  using spike_index_clear for clustering step")
         spike_index = spike_index_clear.copy()
     
-    if os.path.exists(chunk_dir+'/complete.npy')==False:
+    if os.path.exists(chunk_dir+'/local_complete.npy')==False:
    
         # read recording chunk and share as global variable
         # Cat: TODO: recording_chunk should be a shared variable in 
@@ -2434,7 +2434,123 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
                 mfm_threshold, upsample_factor, nshifts, min_spikes_local,
                 standardized_filename, 
                 geometry_file,
-                n_channels])
+                n_channels, True])
+
+        # Cat: TODO: have single-core option also here     
+        # print ("  starting clustering")
+        # if CONFIG.resources.multi_processing:
+            # p = mp.Pool(CONFIG.resources.n_processors)
+            # res = p.map_async(cluster_channels_chunks_args, args_in).get(988895)
+            # p.close()
+
+        # else:
+            # res = []
+            # for arg_in in args_in:
+                # res.append(cluster_channels_chunks_args(arg_in))
+        print ("  starting clustering")
+        if CONFIG.resources.multi_processing:
+            p = mp.Pool(CONFIG.resources.n_processors)
+            res = p.map_async(Cluster, args_in).get(988895)
+            p.close()
+
+        else:
+            res = []
+            for arg_in in args_in:
+                res.append(Cluster(arg_in))
+
+        ## save simple flag that chunk is done
+        ## Cat: TODO: fix this; or run chunk wise-global merge
+        np.save(chunk_dir+'/local_complete.npy',np.arange(10))
+    
+    else:
+        print ("... local clustering previously completed...")
+
+    
+    # Cat: TODO: this logic isn't quite correct; should merge with above
+    fname_local_spike_train = os.path.join(CONFIG.data.root_folder, 
+                                         'tmp/cluster/local_spike_train.npy')
+    fname_local_templates = os.path.join(CONFIG.data.root_folder, 
+                                         'tmp/cluster/local_templates.npy')
+    if os.path.exists(fname_local_spike_train)==False: 
+
+        # reload recording chunk if not already in memory
+        if recording_chunk is None: 
+            buffer_size = 200
+            standardized_filename = os.path.join(CONFIG.data.root_folder,
+                                                'tmp', 
+                                                'standarized.bin')
+            n_channels = CONFIG.recordings.n_channels
+            root_folder = CONFIG.data.root_folder
+            
+            recording_chunk = binary_reader(idx, 
+                                            buffer_size, 
+                                            standardized_filename, 
+                                            n_channels)
+                    
+        # run global merge function
+        # Cat: TODO: may wish to clean up these flags; goal is to use same
+        #            merge function for both clustering and deconv
+        out_dir='cluster'
+        units = None    # this flag is for deconvolution clusters
+        spike_train_local, templates_local = global_merge_max_dist(chunk_dir,
+                                                                   CONFIG2,
+                                                                   out_dir,
+                                                                   units,
+                                                                   True)
+        np.save(fname_local_spike_train, spike_train_local)
+        np.save(fname_local_templates, templates_local)
+    
+    else:
+        spike_train_local = np.load(fname_local_spike_train)
+        templates_local = np.load(fname_local_templates)
+        units = np.unique(spike_train_local[:,1])
+        print ("Number of units after local clustering: "+str(len(units)))
+
+    if os.path.exists(chunk_dir+'/complete.npy')==False:
+   
+        # read recording chunk and share as global variable
+        # Cat: TODO: recording_chunk should be a shared variable in 
+        #            multiprocessing module;
+        buffer_size = 200
+        standardized_filename = os.path.join(CONFIG.data.root_folder,
+                                            'tmp', 'standarized.bin')
+        n_channels = CONFIG.recordings.n_channels
+        root_folder = CONFIG.data.root_folder
+        
+        print ("  loading recording chunk")
+        #recording_chunk = binary_reader(idx, buffer_size, 
+        #            standardized_filename, n_channels)
+
+        # select only spike_index_clear that is in the chunk
+        indexes_chunk = np.where(
+                    np.logical_and(spike_index[:,0]>=idx[0], 
+                    spike_index[:,0]<idx[1]))[0]
+        
+        spike_index_chunk = spike_index[indexes_chunk]    
+        
+        # Cat: TODO: this parallelization may not be optimally asynchronous
+        # make arg list first
+        chunk_dir = CONFIG.data.root_folder+"/tmp/cluster/chunk_"+ \
+                                                    str(proc_index).zfill(6)
+        args_in = []
+        for unit in units:
+        #for channel in [4,6,22,23]:
+        #for channel in [255]:
+
+            # check to see if chunk + channel already completed
+            filename_postclustering = (chunk_dir + "/local_unit_"+
+                                                            str(unit)+".npz")
+            # skip 
+            if os.path.exists(filename_postclustering):
+                continue 
+                
+            args_in.append([unit, idx, proc_index,CONFIG2, 
+                spike_train_local, n_dim_pca, n_dim_pca_compression,
+                wf_start, wf_end, n_feat_chans, out_dir, 
+                mfm_threshold, upsample_factor, nshifts, min_spikes_local,
+                standardized_filename, 
+                geometry_file,
+                n_channels, False])
 
         # Cat: TODO: have single-core option also here     
         # print ("  starting clustering")
@@ -2463,10 +2579,9 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
         np.save(chunk_dir+'/complete.npy',np.arange(10))
     
     else:
-        print ("... clustering previously completed...")
+        print ("... full clustering previously completed...")
 
-    
-    # Cat: TODO: this logic isn't quite correct; should merge with above
+
     fname = os.path.join(CONFIG.data.root_folder, 
                          'tmp/cluster/spike_train_post_cluster_post_merge_post_cutoff.npy')
     if os.path.exists(fname)==False: 
@@ -2489,11 +2604,11 @@ def run_cluster_features_chunks(spike_index_clear, spike_index_all,
         # Cat: TODO: may wish to clean up these flags; goal is to use same
         #            merge function for both clustering and deconv
         out_dir='cluster'
-        units = None    # this flag is for deconvolution clusters
         global_merge_max_dist(chunk_dir,
                               CONFIG2,
                               out_dir,
-                              units)
+                              units,
+                              False)
 
 
 def binary_reader(idx_list, buffer_size, standardized_filename,
@@ -2930,7 +3045,7 @@ def connected_channels(channel_list, ref_channel, neighbors, keep=None):
     # return indexes_subsampled
 
 
-def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
+def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units, local_clustering):
 
     ''' Function that cleans low spike count templates and merges the rest 
     '''
@@ -2951,17 +3066,30 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
     # and post-deconv unit-based reclusteirng can work with same routine
     # Cat: TODO: make sure this step is correct
     if out_dir == 'cluster':
-        for channel in range(CONFIG.recordings.n_channels):
-            data = np.load(chunk_dir+'/channel_{}.npz'.format(channel))
-            temp_temp = data['templates']
+        if local_clustering:
+            for channel in range(CONFIG.recordings.n_channels):
+                data = np.load(chunk_dir+'/channel_{}.npz'.format(channel))
+                temp_temp = data['templates']
 
-            if (temp_temp.shape[0]) !=0:
-                templates.append(temp_temp)
-                temp = data['spike_index']
-                for s in range(len(temp)):
-                    spike_times = temp[s][:,0]
-                    spike_indexes.append(spike_times)
-                    weights.append(spike_times.shape[0])
+                if (temp_temp.shape[0]) !=0:
+                    templates.append(temp_temp)
+                    temp = data['spike_index']
+                    for s in range(len(temp)):
+                        spike_times = temp[s][:,0]
+                        spike_indexes.append(spike_times)
+                        weights.append(spike_times.shape[0])
+        else:
+            for unit in units:
+                data = np.load(chunk_dir+'/local_unit_{}.npz'.format(unit))
+                temp_temp = data['templates']
+
+                if (temp_temp.shape[0]) !=0:
+                    templates.append(temp_temp)
+                    temp = data['spike_index']
+                    for s in range(len(temp)):
+                        spike_times = temp[s][:,0]
+                        spike_indexes.append(spike_times)
+                        weights.append(spike_times.shape[0])            
  
     else: 
         for unit in units:
@@ -3021,13 +3149,20 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
                                                    CONFIG)
         templates = templates.swapaxes(0,2).swapaxes(1,2)
 
-    print("  "+out_dir+ " templates/spiketrain before merge/cutoff: ", templates.shape, spike_indexes.shape)
+    if local_clustering:
+        print("local templates/spiketrain: ", templates.shape, spike_indexes.shape)
 
-    np.save(chunk_dir  + '/templates_post_'+out_dir+'_before_merge_before_cutoff.npy', templates)
-    np.save(chunk_dir + '/spike_train_post_'+out_dir+'_before_merge_before_cutoff.npy', spike_indexes)
+        np.save(chunk_dir  + '/local_templates.npy', templates)
+        np.save(chunk_dir + '/local_spike_train.npy', spike_indexes)
+    
+    else:
+        print("templates/spiketrain before merge/cutoff: ", templates.shape, spike_indexes.shape)
+
+        np.save(chunk_dir  + '/templates_post_'+out_dir+'_before_merge_before_cutoff.npy', templates)
+        np.save(chunk_dir + '/spike_train_post_'+out_dir+'_before_merge_before_cutoff.npy', spike_indexes)
 
     # option to skip merge step
-    if True:
+    if not local_clustering:
         ''' ************************************************
             ********** COMPUTE SIMILARITY METRICS **********
             ************************************************
@@ -3105,7 +3240,7 @@ def global_merge_max_dist(chunk_dir, CONFIG, out_dir, units):
         final_spike_train = spike_indexes
         templates = templates
     
-    if out_dir=='cluster':
+    if out_dir=='cluster' and (not local_clustering):
         fname = CONFIG.data.root_folder + '/tmp/spike_train_cluster.npy'
         np.save(fname, final_spike_train)
         
@@ -4610,7 +4745,4 @@ def find_clean_templates(templates, CONFIG):
             template_ids.append(k)
             
     return np.array(template_ids)
-
-
-
 
