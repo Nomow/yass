@@ -43,7 +43,8 @@ colors = [
 'peru','cadetblue','forestgreen','slategrey','lightsteelblue','rebeccapurple',
 'darkmagenta','yellow','hotpink']
 
-sorted_colors=colors
+sorted_colors= colors
+colors = np.asarray(colors)
 
 
 class Cluster(object):
@@ -252,8 +253,8 @@ class Cluster(object):
 
         # Cat: TODO: read all these from CONFIG
         self.spike_size = 111
-        self.yscale = 1.
-        self.xscale = 4.
+        self.yscale = 10.
+        self.xscale = 1.
         self.triageflag = True
         #self.alignflag = True
         self.plotting = True
@@ -329,14 +330,14 @@ class Cluster(object):
         if self.plotting:
             # Cat: TO DO: this global x is not necessary, should make it local
             self.x = np.zeros(100, dtype = int)
-            self.fig1 = plt.figure(figsize =(60,60))
-            self.grid1 = plt.GridSpec(20,20,wspace = 0.0,hspace = 0.2)
+            self.fig1 = plt.figure(figsize =(100,100))
+            self.grid1 = plt.GridSpec(25,20,wspace = 2,hspace = 1)
 #             self.ax1 = self.fig1.add_subplot(self.grid1[:,:])
 
             # setup template plot
             xlim = self.CONFIG.geom[:,0].ptp(0)
             ylim = self.CONFIG.geom[:,1].ptp(0)#/float(xlim)
-            self.fig2 = plt.figure(figsize =(20,15))
+            self.fig2 = plt.figure(figsize =(60,30))
             self.ax2 = self.fig2.add_subplot(111)
         else:
             self.fig1 = []
@@ -1378,43 +1379,62 @@ class Cluster(object):
             self.x[gen] += 1
 
             # compute cluster memberships
-            #mask = rhat>0
+            mask = rhat>0
             #print (" mask: ", mask.shape)
             #print (" mask: ", mask)
             #print (" rhat: ", rhat.shape)
             #print (" rhat: ", rhat)
             #stability = np.average(mask * rhat, axis = 0, weights = mask)
-
+            stability = np.zeros(rhat.shape[1])
+            for clust in range(stability.size):
+                if mask[:,clust].sum() == 0.0:
+                    continue
+                stability[clust] = np.average(mask[:,clust] * rhat[:,clust], axis = 0, weights = mask[:,clust])
+                
             clusters, sizes = np.unique(assignment2, return_counts=True)
             # make legend
             labels = []
-            for clust,_ in enumerate(clusters):
-                patch_j = mpatches.Patch(color = sorted_colors[clust%100], 
-                                        label = "size = "+str(int(sizes[clust])))
-                                         #+ "stab: "+ str(np.round(stability[clust],2)))
-                
+            if -1 in clusters:
+                i = 1
+            else:
+                i = 0
+            for clust in clusters:
+                if clust == -1:
+                    continue
+                if -1 in clusters:
+                    patch_j = mpatches.Patch(color = sorted_colors[clust%100], 
+                        label = "size = {}, stability = {}".format(sizes[i], np.round(stability[i-1],2)))
+                else:
+                    patch_j = mpatches.Patch(color = sorted_colors[clust%100], 
+                        label = "size = {}, stability = {}".format(sizes[i], np.round(stability[i],2)))
                 labels.append(patch_j)
+                i+= 1
             
             # make list of colors; this could be done simpler
-            temp_clrs = []
-            for k in assignment2:
-                temp_clrs.append(sorted_colors[k])
-
-            # make scater plots
-            if pca_wf.shape[1]>1:
-                ax.scatter(pca_wf[:,0], pca_wf[:,1], 
-                    c = temp_clrs, edgecolor = 'k',alpha=0.1)
-                
-                # add red dot for converged clusters; cyan to off-channel
-                if end_point!='false':
-                    ax.scatter(pca_wf[:,0].mean(), pca_wf[:,1].mean(), c= end_point, s = 2000,alpha=.5)
+            if split_type =='pre_removal':
+                for i, clust in enumerate(clusters):
+                    idx = assignment2 == clust
+                    if clust == -1:
+                        ax.scatter(pca_wf[idx,0], pca_wf[idx,1], c = 'lightsteelblue', marker = 'x', s= 100, alpha = 0.7)
+                    else:
+                        ax.scatter(pca_wf[idx,0], pca_wf[idx,1], c = sorted_colors[clust], alpha = 0.05)
+            
             else:
-                for clust in clusters:
-                    ax.hist(pca_wf[np.where(assignment2==clust)[0]], 100)
+            # make scater plots
+                if pca_wf.shape[1]>1:
+                    ax.scatter(pca_wf[:,0], pca_wf[:,1], 
+                        c = colors[assignment2.astype(int)] ,alpha=0.05)
 
-            # finish plotting
-            ax.legend(handles = labels, fontsize=5)
-            ax.set_title("Spikes: "+ str(sizes.sum())+", "+split_type)
+                    # add red dot for converged clusters; cyan to off-channel
+                    if end_point!='false':
+                        ax.scatter(pca_wf[:,0].mean(), pca_wf[:,1].mean(), c= end_point, s = 2000,alpha=.5)
+                else:
+                    for clust in clusters:
+                        ax.hist(pca_wf[np.where(assignment2==clust)[0]], 100)
+
+                # finish plotting
+            ax.legend(handles = labels, fontsize=10, bbox_to_anchor=(1.05, 1),loc=2, borderaxespad=0.)
+            ax.set_title(str(sizes.sum())+" "+split_type, fontsize = 5) 
            
           
     def plot_clustering_template(self, gen, wf_mean, idx_recovered, feat_chans, N):
@@ -1422,7 +1442,7 @@ class Cluster(object):
         # plot template
         #local_scale = min
         self.ax2.plot(self.CONFIG.geom[:,0]+
-                  np.arange(-wf_mean.shape[0]//2,wf_mean.shape[0]//2,1)[:,np.newaxis]/self.xscale,
+                  np.arange(-wf_mean.shape[0],0,1)[:,np.newaxis]/self.xscale,
                   self.CONFIG.geom[:,1] + wf_mean[:,:]*self.yscale, c=colors[N%100],
                   alpha=min(max(0.4, idx_recovered.shape[0]/1000.),1))
 
