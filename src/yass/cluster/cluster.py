@@ -11,11 +11,12 @@ from scipy import stats
 from scipy.signal import argrelmax
 from scipy.spatial import cKDTree
 from copy import deepcopy
+from yass.mfm import vbPar
 from sklearn.mixture import GaussianMixture
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from diptest.diptest import diptest as dp
 from sklearn.cluster import AgglomerativeClustering
-
+import networkx as nx
 from yass.explore.explorers import RecordingExplorer
 from yass.geometry import n_steps_neigh_channels
 from yass import mfm
@@ -85,7 +86,9 @@ class Cluster(object):
         self.verbose=True
         
         # Exit if cluster too small
-        if current_indexes.shape[0] < self.CONFIG.cluster.min_spikes: return
+        if current_indexes.shape[0] < self.CONFIG.cluster.min_spikes: 
+            self.too_small.append(self.sic_global[current_indexes])
+            return
         
         # Align all chans to max chan - only in gen0
         if gen==0:
@@ -105,10 +108,13 @@ class Cluster(object):
                                                 gen, wf_align)
 
         # KNN Triage and re-PCA step
-        pca_wf, idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
+        pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
+        self.knn_removed.append(self.sic_global[current_indexes[not_idx_keep]])
 
         # Exit if cluster too small
-        if idx_keep.shape[0] < self.CONFIG.cluster.min_spikes: return
+        if idx_keep.shape[0] < self.CONFIG.cluster.min_spikes: 
+            self.too_small.append(self.sic_global[current_indexes[idx_keep]])
+            return
 
 
         # subsample 10,000 spikes if not in deconv and have > 10k spikes
@@ -116,19 +122,25 @@ class Cluster(object):
         pca_wf = self.subsample_step(pca_wf)
 
         # mfm cluster step
-        vbParam, assignment = self.run_em2(gen, pca_wf)
+        vbParam, assignment = self.run_mfm3(gen, pca_wf)
         #vbParam, assignment = self.run_EM(gen, pca_wf_all)
         
         # if we subsampled then recover soft-assignments using above:
-        idx_recovered, vbParam2, assignment2 = self.recover_step_em(gen,
-                            pca_wf, vbParam, assignment, pca_wf_all)
+#         idx_recovered, vbParam2, assignment2 = self.recover_step_em(gen,
+#                             pca_wf, vbParam, assignment, pca_wf_all)
+        vbParam2, assignment2, idx_recovered =  self.garbage_collector(vbParam, pca_wf_all)
+        idx_cluster_triaged = np.where(assignment2==-1)[0]
+        self.cluster_triaged.append(self.sic_global[current_indexes[idx_keep][idx_cluster_triaged]])
+
         #else:
         #    idx_recovered = np.arange(assignment.shape[0])
         #    assignment2 = assignment
         #    vbParam2 = vbParam
             
         # Exit if cluster too small
-        if idx_recovered.shape[0] < self.CONFIG.cluster.min_spikes: return
+        if idx_recovered.shape[0] < self.CONFIG.cluster.min_spikes: 
+            self.too_small.append(self.sic_global[cluster_indexes[idx_keep[idx_recovered]]])
+            return
 
         # Note: do not compute the spike index or template until done decimating the data
         # template_current = wf_align[idx_keep][idx_recovered].mean(0)
@@ -157,20 +169,30 @@ class Cluster(object):
         # Case #2: multiple clusters
         else:
             # check if any clusters are stable first
-            mask = vbParam2.rhat[idx_recovered]>0
-            stability = np.average(mask * vbParam2.rhat[idx_recovered], axis = 0, weights = mask)
-            clusters, sizes = np.unique(assignment2[idx_recovered], return_counts = True)
+#             mask = vbParam2.rhat[idx_recovered]>0
+#             stability = np.average(mask * vbParam2.rhat[idx_recovered], axis = 0, weights = mask)
+#             clusters, sizes = np.unique(assignment2[idx_recovered], return_counts = True)
+
+            vbParam3, assignment3, stability3, idx_recovered3, idx_to_remove, return_flag = self.cluster_annealing(vbParam2, assignment2, idx_recovered)
+            if idx_to_remove.sum()>0:
+                self.cc_removed.append(sic_current[idx_recovered3])
+           
+            if return_flag:
+                self.too_small.append(sic_current[idx_recovered3])
+                return
+            
+            clusters, sizes = np.unique(assignment3, return_counts = True)
             
             # if at least one stable cluster
-            if np.any(stability>self.mfm_threshold):      
-                self.multi_cluster_stable(gen, assignment2, idx_keep, 
-                            idx_recovered, pca_wf_all, vbParam2, stability, 
+            if np.any(stability3>self.mfm_threshold):      
+                self.multi_cluster_stable2(gen, assignment3, idx_keep, 
+                            idx_recovered, pca_wf_all, vbParam3, stability3, 
                             current_indexes, sizes)
 
             # if no stable clusters, run spliting algorithm
             else:
-                self.multi_cluster_unstable(mc, gen, assignment2, idx_keep, 
-                            idx_recovered, pca_wf_all, vbParam2, stability, 
+                self.multi_cluster_unstable2(mc, gen, assignment3, idx_keep, 
+                            idx_recovered3, pca_wf_all, vbParam3, stability3, 
                             current_indexes, sic_current, template_current, 
                             feat_chans)
                             
@@ -240,6 +262,11 @@ class Cluster(object):
         self.assignment_global = []
         self.spike_index = []
         self.templates = []
+        self.knn_removed = []
+        self.cc_removed = []
+        self.too_small = []
+        self.non_max_channel = []
+        self.cluster_triaged = []
         self.feat_chans_cumulative = []
         self.shifts = []
         self.aligned_wfs_cumulative = []
@@ -304,18 +331,141 @@ class Cluster(object):
             self.x = np.zeros(100, dtype = int)
             self.fig1 = plt.figure(figsize =(60,60))
             self.grid1 = plt.GridSpec(20,20,wspace = 0.0,hspace = 0.2)
-            self.ax1 = self.fig1.add_subplot(self.grid1[:,:])
+#             self.ax1 = self.fig1.add_subplot(self.grid1[:,:])
 
             # setup template plot
             xlim = self.CONFIG.geom[:,0].ptp(0)
             ylim = self.CONFIG.geom[:,1].ptp(0)#/float(xlim)
-            self.fig2 = plt.figure(figsize =(100,max(ylim/float(xlim)*100,10)))
+            self.fig2 = plt.figure(figsize =(20,15))
             self.ax2 = self.fig2.add_subplot(111)
         else:
             self.fig1 = []
             self.grid2 = []
             self.x = []
             #self.ax_t = []
+            
+    def cluster_annealing(self, vbParam, assignment, idx_recovered):
+        vbParam2 = deepcopy(vbParam)
+        mu = vbParam2.muhat[:,:,0].T
+        mudiff = mu[:,np.newaxis] - mu
+        prec = vbParam2.Vhat[:,:,:,0].T * vbParam2.nuhat[:,np.newaxis, np.newaxis]
+        maha = np.matmul(np.matmul(mudiff[:,:,np.newaxis], prec[:,np.newaxis]), mudiff[:,:,:, np.newaxis])
+        maha = maha[:,:, 0,0]
+
+        flag = True
+        maha_thresh = 10
+        min_count = 20
+        maha_thresh_max = 15
+        ctr = 0
+        clusters_removed = 0
+
+        while flag and ctr <200:
+
+            row, column = np.where(maha<maha_thresh)
+            G = nx.DiGraph()
+            for i in np.unique(assignment[idx_recovered]):
+                G.add_node(i)
+            for i, j in zip(row,column):
+                G.add_edge(i, j, weight = maha[i,j])
+
+            cc = nx.strongly_connected_components(G)
+
+
+
+            clusters_to_remove = []
+            cc_to_remove = []
+            idx_to_remove = np.zeros(assignment[idx_recovered].size, dtype = 'bool')
+            for i, units in enumerate(cc):
+                idx = np.where(np.in1d(assignment[idx_recovered], list(units)))[0]
+                if idx.size < min_count:
+                    cc_to_remove.append(i)
+                    idx_to_remove[idx] = True
+                    clusters_to_remove.append(list(units))
+
+            if len(clusters_to_remove) != 0:
+                clusters_to_remove = np.concatenate(clusters_to_remove, axis = 0)
+                idx_recovered2 = idx_recovered[~idx_to_remove]
+            else:
+                idx_recovered2 = idx_recovered.copy()
+
+            assignment3 = assignment[idx_recovered2].copy()
+            rhat = np.zeros([assignment[idx_recovered2].size,0])
+
+            cc = nx.strongly_connected_components(G)
+            ctr2 = 0
+            for i, units in enumerate(cc):
+
+                if i in cc_to_remove:
+                    continue
+                idx =  np.in1d(assignment[idx_recovered2], list(units))
+                assignment3[idx] = ctr2
+                if len(units) == 1:
+                    rhat = np.concatenate([rhat,vbParam.rhat[idx_recovered2][:, list(units)]], axis = 1)
+                else:
+                    rhat = np.concatenate([rhat,vbParam.rhat[idx_recovered2][:, list(units)].sum(1, keepdims = True)], axis = 1)
+                ctr2 += 1
+
+
+
+            rhat[rhat<0.001] = 0.0
+            rhat = rhat/np.sum(rhat,axis =1 ,keepdims = True)
+            mask = rhat > 0.0
+
+            vbParam3 = vbPar(rhat)
+            stability = np.zeros(rhat.shape[1])
+            for clust in range(stability.size):
+                if mask[:,clust].sum() == 0.0:
+                    continue
+                stability[clust] = np.average(mask[:,clust] * rhat[:,clust], axis = 0, weights = mask[:,clust])
+
+
+            if np.unique(assignment3).size == np.unique(assignment[idx_recovered2]).size and np.unique(assignment[idx_recovered2]).size!=2:
+                maha_thresh = maha_thresh * 1.05
+            elif np.unique(assignment3).size == 1:
+                maha_thresh = maha_thresh * 0.95
+            else:
+                flag = False
+            ctr += 1
+            
+        if idx_recovered2.size < min_count:
+            return vbParam3, assignment3, stability, idx_recovered2, idx_to_remove, True
+        else:
+            return vbParam3, assignment3, stability, idx_recovered2, idx_to_remove, False
+        
+    def garbage_collector(self, vbParam, pca_wf_all):
+        
+        if np.any(vbParam.nuhat>100) and False:
+            f_min = 0.00000005 * 20000 #(0.0005 hz)
+            cov_exist  = vbParam.invVhat[:,:,:,0].T / vbParam.nuhat[:,np.newaxis, np.newaxis]
+            med_cov_det = np.median(np.linalg.det(cov_exist[vbParam.nuhat>100]))
+            cov =  50 * np.cov(pca_wf_all.T)
+            weight = f_min * np.sqrt(np.linalg.det(cov))/ np.sqrt(med_cov_det)
+            print(weight, np.sqrt(np.linalg.det(cov)), np.sqrt(med_cov_det))
+
+            nu = 5 + weight
+            invVhat = cov * nu
+            Vhat = np.linalg.inv(invVhat)
+            muhat = pca_wf_all.mean(0)
+
+            vbParam2 = deepcopy(vbParam)
+
+            vbParam2.rhat = np.concatenate([vbParam2.rhat, np.zeros([vbParam2.rhat.shape[0], 1])], axis = 1)
+            vbParam2.Vhat = np.concatenate([vbParam2.Vhat, Vhat[:, :, np.newaxis, np.newaxis]], axis = 2)
+            vbParam2.invVhat = np.concatenate([vbParam2.invVhat, invVhat[:, :, np.newaxis, np.newaxis]], axis = 2)
+            vbParam2.muhat = np.concatenate([vbParam2.muhat, muhat[:,np.newaxis, np.newaxis]], axis = 1)
+            vbParam2.lambdahat = np.concatenate([vbParam2.lambdahat, np.array([0.01 + weight])])
+            vbParam2.ahat = np.concatenate([vbParam2.ahat, np.array([1+ weight])])
+            vbParam2.nuhat = np.concatenate([vbParam2.nuhat, np.array([5+ weight])])
+
+            vbParam2, assignment2 = self.recover_spikes(vbParam2, pca_wf_all, CONFIG)
+            idx_recovered = np.where(assignment2 != vbParam.rhat.shape[1])[0]
+            assignment2[assignment2 == vbParam.rhat.shape[1]] = -1
+
+        else:
+            vbParam2, assignment2 = self.recover_spikes(vbParam, pca_wf_all)
+            idx_recovered = np.where(assignment2!=-1)[0]
+
+        return vbParam2, assignment2, idx_recovered
             
 
     def align_step(self, gen):
@@ -444,17 +594,18 @@ class Cluster(object):
         
         if triage_flag:
             idx_keep = self.knn_triage(self.knn_triage_threshold, pca_wf)
+            not_idx_keep = np.where(~idx_keep)[0]
             idx_keep = np.where(idx_keep==1)[0]
             if self.verbose:
                 print("chan "+str(self.channel)+' gen: '+str(gen) + 
                       " triaged, remaining spikes "+ 
                       str(idx_keep.shape[0]))
 
-            if idx_keep.shape[0] < self.CONFIG.cluster.min_spikes: 
-                return None, np.array([])
-
             pca_wf = pca_wf[idx_keep]
-
+            
+            if idx_keep.shape[0] < self.CONFIG.cluster.min_spikes: 
+                return pca_wf, idx_keep, not_idx_keep
+            
             # rerun global compression on residual waveforms
             if True:
                 pca = PCA(n_components=min(self.selected_PCA_rank, wf_final[idx_keep].shape[1]))
@@ -462,9 +613,10 @@ class Cluster(object):
                 pca_wf = pca.transform(wf_final[idx_keep])
         
         else:
+            not_idx_keep = np.asarray([], dtype = 'int')
             idx_keep = np.arange(pca_wf.shape[0])
         
-        return pca_wf, idx_keep
+        return pca_wf, idx_keep, not_idx_keep
 
     def knn_triage(self, th, pca_wf):
 
@@ -582,7 +734,7 @@ class Cluster(object):
         maskedData = mfm.maskData(pca[:,:,np.newaxis], np.ones([N, C]), np.arange(N))
         
         vbParam.update_local(maskedData)
-        assignment = mfm.cluster_triage(vbParam, pca[:,:,np.newaxis], D*maha_dist)
+#         assignment = mfm.cluster_triage(vbParam, pca[:,:,np.newaxis], D*maha_dist)
         
         # zero out low assignment vals
         self.recover_threshold = 0.001
@@ -590,8 +742,7 @@ class Cluster(object):
             vbParam.rhat[vbParam.rhat < self.recover_threshold] = 0
             vbParam.rhat = vbParam.rhat/np.sum(vbParam.rhat,
                                              1, keepdims=True)
-            assignment = np.argmax(vbParam.rhat, axis=1)
-        
+        assignment = mfm.cluster_triage(vbParam, pca[:,:,np.newaxis], D*maha_dist)
         return vbParam, assignment
         
     
@@ -615,6 +766,7 @@ class Cluster(object):
                             vbParam2.rhat[idx_recovered],
                             split_type,
                             end_flag)
+            self.non_max_channel.append(sic_current)
             return 
             
         else:         
@@ -650,7 +802,82 @@ class Cluster(object):
                             split_type,
                             end_flag)
                 
-                                
+    def multi_cluster_stable2(self, gen, assignment3, idx_keep, idx_recovered, 
+                             pca_wf_all, vbParam3, stability3, current_indexes,
+                             sizes):
+                                          
+        if self.verbose:
+            print("chan "+str(self.channel)+' gen: '+str(gen) + 
+                  " multiple clusters, stability " + str(np.round(stability3,2)) + 
+                  " size: "+str(sizes))
+
+        # always plot scatter distributions
+        if self.plotting and gen<20:
+            split_type = 'mfm multi split'
+            self.plot_clustering_scatter(gen,  
+                        assignment3,
+                        assignment3,
+                        pca_wf_all[idx_recovered],
+                        vbParam3.rhat,
+                        split_type)
+                        
+
+        # remove stable clusters 
+        for clust in np.where(stability3>self.mfm_threshold)[0]:
+
+            idx = np.where(assignment3==clust)[0]
+            
+            if idx.shape[0]<self.CONFIG.cluster.min_spikes:
+                self.too_small.append(self.sic_global[current_indexes[idx_keep][idx_recovered[idx]]])
+                continue    # cluster too small
+            
+            if self.verbose:
+                print("chan "+str(self.channel)+' gen: '+str(gen)+
+                    " reclustering stable cluster"+ 
+                    str(idx.shape))
+            
+            triageflag = True
+            #alignflag = True
+            self.cluster(current_indexes[idx_keep][idx_recovered][idx], 
+                         gen+1, triageflag)
+        
+        left_behind = np.where(stability3<=self.mfm_threshold)[0]
+        for clust in left_behind:
+            idx = np.where(assignment3 == clust)[0]
+            if idx.sum()>self.CONFIG.cluster.min_spikes:
+                if self.verbose:
+                    print("chan "+str(self.channel)+" reclustering residuals "+
+                                            str(idx.shape))
+                triageflag = True
+                self.cluster(current_indexes[idx_keep][idx_recovered][idx], gen+1, triageflag)
+            else:
+                self.too_small.append(self.sic_global[current_indexes[idx_keep[idx_recovered[idx]]]])
+                
+                
+    def multi_cluster_unstable2(self, mc, gen, assignment2, idx_keep, 
+                            idx_recovered, pca_wf_all, vbParam2, stability, 
+                            current_indexes, sic_current, template_current,
+                            feat_chans):
+        
+        for clust in np.unique(assignment2): #np.where(stability>mfm_threshold)[0]:
+            idx = np.where(assignment2==clust)[0]
+
+            if idx.shape[0]<self.CONFIG.cluster.min_spikes:
+                self.too_small.append(sic_current[idx])
+                continue    # cluster too small
+
+            if self.verbose:
+                print("chan "+str(self.channel)+' gen: '+str(gen)+
+                    " reclustering cluster"+ 
+                    str(idx.shape))
+
+            triageflag = True
+
+
+            self.cluster(current_indexes[idx_keep][idx_recovered][idx], gen+1, triageflag)
+    
+    
+    
     def multi_cluster_stable(self, gen, assignment2, idx_keep, idx_recovered, 
                              pca_wf_all, vbParam2, stability, current_indexes,
                              sizes):
@@ -988,6 +1215,13 @@ class Cluster(object):
                 self.wf_global.shape[0], ", found # clusters: ", 
                 len(self.spike_index))
             
+        np.save(self.filename_postclustering + '_knn_removed.npy', self.knn_removed)
+        np.save(self.filename_postclustering + '_too_small.npy', self.too_small)
+        np.save(self.filename_postclustering + '_cc_removed.npy', self.cc_removed)
+        np.save(self.filename_postclustering + '_cluster_triaged.npy', self.cluster_triaged)
+        np.save(self.filename_postclustering + '_non_max_channel.npy', self.non_max_channel)
+        
+        
         # overwrite this variable just in case garbage collector doesn't
         self.wf_global = None
         
