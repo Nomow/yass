@@ -175,6 +175,16 @@ class Cluster(object):
 #             clusters, sizes = np.unique(assignment2[idx_recovered], return_counts = True)
 
             vbParam3, assignment3, stability3, idx_recovered3, idx_to_remove, return_flag = self.cluster_annealing(vbParam2, assignment2, idx_recovered)
+            if self.plotting and gen<20:
+                split_type = 'mfm multi split'
+                self.plot_clustering_scatter(gen,  
+                            assignment3,
+                            assignment3,
+                            pca_wf_all[idx_recovered],
+                            vbParam3.rhat,
+                            split_type)
+    
+            
             if idx_to_remove.sum()>0:
                 self.cc_removed.append(sic_current[idx_recovered3])
            
@@ -813,14 +823,7 @@ class Cluster(object):
                   " size: "+str(sizes))
 
         # always plot scatter distributions
-        if self.plotting and gen<20:
-            split_type = 'mfm multi split'
-            self.plot_clustering_scatter(gen,  
-                        assignment3,
-                        assignment3,
-                        pca_wf_all[idx_recovered],
-                        vbParam3.rhat,
-                        split_type)
+
                         
 
         # remove stable clusters 
@@ -859,6 +862,8 @@ class Cluster(object):
                             idx_recovered, pca_wf_all, vbParam2, stability, 
                             current_indexes, sic_current, template_current,
                             feat_chans):
+        
+      
         
         for clust in np.unique(assignment2): #np.where(stability>mfm_threshold)[0]:
             idx = np.where(assignment2==clust)[0]
