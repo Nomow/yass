@@ -116,11 +116,11 @@ class Cluster(object):
         pca_wf = self.subsample_step(pca_wf)
 
         # mfm cluster step
-        vbParam, assignment = self.run_em2(gen, pca_wf)
+        vbParam, assignment = self.run_mfm3(gen, pca_wf)
         #vbParam, assignment = self.run_EM(gen, pca_wf_all)
         
         # if we subsampled then recover soft-assignments using above:
-        idx_recovered, vbParam2, assignment2 = self.recover_step_em(gen,
+        idx_recovered, vbParam2, assignment2 = self.recover_step(gen,
                             pca_wf, vbParam, assignment, pca_wf_all)
         #else:
         #    idx_recovered = np.arange(assignment.shape[0])
@@ -425,6 +425,9 @@ class Cluster(object):
             stds[idx, chan] = np.std(wf_align[:, idx][:, :, chan], axis=0)
         
         feat_chans = np.argsort(stds.max(0))[::-1][:self.n_feat_chans]
+        mc = np.mean(wf_align, 0).ptp(0).argmax()
+        if not np.any(feat_chans == mc):
+            feat_chans = np.hstack((feat_chans, mc))
         wf_final = np.zeros((wf_align.shape[0], 0))
         for chan in feat_chans:
             idx = self.active_loc[:, chan] > 0
