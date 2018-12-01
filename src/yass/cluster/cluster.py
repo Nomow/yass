@@ -119,10 +119,10 @@ class Cluster(object):
             pca_wf_all = pca_wf.copy()
             
         else:
-            pca_wf, idx_keep, not_idx_keep = self.knn_triage_dynamic(vbParam_temp, pca_wf, wf_final)
+#             pca_wf, idx_keep, not_idx_keep = self.knn_triage_dynamic(vbParam_temp, pca_wf, wf_final)
 
-#             pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
-#             self.triage_value = 0.95
+            pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
+            self.triage_value = 0.95
 
             self.knn_removed.append(self.sic_global[current_indexes[not_idx_keep]])
 
@@ -209,6 +209,8 @@ class Cluster(object):
             
             clusters, sizes = np.unique(assignment3, return_counts = True)
             
+            
+            print(assignment3.size, idx_keep.size, idx_recovered3.size)
             # if at least one stable cluster
             if np.any(stability3>self.mfm_threshold):      
                 self.multi_cluster_stable2(gen, assignment3, idx_keep, 
@@ -399,9 +401,11 @@ class Cluster(object):
         
         
 #         best_group = [vbPar(rhat), assignment, stability_orig, idx_recovered, np.zeros(assignment[idx_recovered].size,dtype = bool)]
-        print(vbParam.rhat.shape)
+        
         if vbParam.rhat.shape[1] <= 2:
-            return vbParam, assignment, stability_orig, idx_recovered, np.asarray([]), False
+            vbParam2 = deepcopy(vbParam)
+            vbParam2.rhat = vbParam2.rhat[idx_recovered]
+            return vbParam2, assignment[idx_recovered], stability_orig, idx_recovered, np.asarray([]), False
 
         while maha_thresh_max - maha_thresh_min >= 1e-5:
 
@@ -500,6 +504,8 @@ class Cluster(object):
                 maha_thresh_min = maha_thresh
             elif np.any(stability>0.90) and np.unique(assignment3).size == 2:
                 break
+#             elif np.any(stability< 0.90) and np.unique(assignment3).size == 2:
+#                 break
             else:
                 maha_thresh_min = maha_thresh
                 
@@ -507,7 +513,7 @@ class Cluster(object):
             print(ctr, maha_thresh, maha_thresh_min, maha_thresh_max, stability, np.unique(assignment3))
                 
                 
-            
+        print(ctr, maha_thresh, maha_thresh_min, maha_thresh_max, stability, np.unique(assignment3))
             
             
             
@@ -545,7 +551,7 @@ class Cluster(object):
             median_distances[i] = np.median(np.median(kdist_temp[i*min_spikes:(i+1)*min_spikes], axis = 0), axis = 0)
 
         kdist = knn_dist(pca_wf)
-        idx_keep = np.median(kdist, axis = 1) < 1.3 * np.median(median_distances)
+        idx_keep = np.median(kdist, axis = 1) < 1.5 * np.median(median_distances)
         
         pca_wf = pca_wf[idx_keep]
         
@@ -858,7 +864,7 @@ class Cluster(object):
     
         return idx_recovered, vbParam2, assignment2
     
-    def recover_spikes(self, vbParam, pca, maha_dist = 1):
+    def recover_spikes(self, vbParam, pca, maha_dist = 0.6):
     
         N, D = pca.shape
         C = 1
