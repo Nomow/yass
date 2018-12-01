@@ -119,13 +119,11 @@ class Cluster(object):
             pca_wf_all = pca_wf.copy()
             
         else:
-#             pca_wf, idx_keep, not_idx_keep = self.knn_triage_dynamic(vbParam_temp, pca_wf, wf_final)
-    #         print(idx_keep.shape, pca_wf.shape, not_idx_keep.shape)
-    #         not_idx_keep = ~idx_keep
-            
-            pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
-            self.triage_value = 0.95
-    #         print(idx_keep.shape, pca_wf.shape, not_idx_keep.shape)
+            pca_wf, idx_keep, not_idx_keep = self.knn_triage_dynamic(vbParam_temp, pca_wf, wf_final)
+
+#             pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
+#             self.triage_value = 0.95
+
             self.knn_removed.append(self.sic_global[current_indexes[not_idx_keep]])
 
             # Exit if cluster too small
@@ -145,6 +143,7 @@ class Cluster(object):
             # if we subsampled then recover soft-assignments using above:
     #         idx_recovered, vbParam2, assignment2 = self.recover_step_em(gen,
     #                             pca_wf, vbParam, assignment, pca_wf_all)
+        
         vbParam2, assignment2, idx_recovered =  self.garbage_collector(vbParam, pca_wf_all)
         idx_cluster_triaged = np.where(assignment2==-1)[0]
         self.cluster_triaged.append(self.sic_global[current_indexes[idx_keep][idx_cluster_triaged]])
@@ -525,6 +524,8 @@ class Cluster(object):
         else:
             return vbParam3, assignment3, stability, idx_recovered2, idx_to_remove, False
         
+    
+    
     def knn_triage_dynamic(self, vbParam, pca_wf, wf_final):
         muhat = vbParam.muhat[:,:,0].T
         cov = vbParam.invVhat[:,:,:,0].T / vbParam.nuhat[:,np.newaxis, np.newaxis]
@@ -544,15 +545,13 @@ class Cluster(object):
             median_distances[i] = np.median(np.median(kdist_temp[i*min_spikes:(i+1)*min_spikes], axis = 0), axis = 0)
 
         kdist = knn_dist(pca_wf)
-        idx_keep = np.median(kdist, axis = 1) < 1*np.median(median_distances)
+        idx_keep = np.median(kdist, axis = 1) < 1.3 * np.median(median_distances)
         
         pca_wf = pca_wf[idx_keep]
         
         not_idx_keep = ~idx_keep
-        print(idx_keep.sum())
         self.triage_value = idx_keep.sum()/idx_keep.size
         if idx_keep.sum() <= self.CONFIG.cluster.min_spikes:
-            
             return pca_wf, np.where(idx_keep)[0], np.where(not_idx_keep)[0]
         
         
