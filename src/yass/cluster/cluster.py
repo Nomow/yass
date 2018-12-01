@@ -119,10 +119,10 @@ class Cluster(object):
             pca_wf_all = pca_wf.copy()
             
         else:
-#             pca_wf, idx_keep, not_idx_keep = self.knn_triage_dynamic(vbParam_temp, pca_wf, wf_final)
+            pca_wf, idx_keep, not_idx_keep = self.knn_triage_dynamic(vbParam_temp, pca_wf, wf_final)
 
-            pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
-            self.triage_value = 0.95
+#             pca_wf, idx_keep, not_idx_keep = self.knn_triage_step(gen, pca_wf, wf_final, triage_flag)
+#             self.triage_value = 0.95
 
             self.knn_removed.append(self.sic_global[current_indexes[not_idx_keep]])
 
