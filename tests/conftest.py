@@ -23,8 +23,7 @@ def patch_triage_network(monkeypatch):
     yield
 
 
-@pytest.fixture()
-def data_info():
+def _data_info():
     d = dict()
 
     d['spike_size_ms'] = 1.5
@@ -42,8 +41,13 @@ def data_info():
 
 
 @pytest.fixture()
+def data_info():
+    return _data_info()
+
+
+@pytest.fixture()
 def data():
-    info = data_info()
+    info = _data_info()
 
     path = os.path.join(PATH_TO_RETINA_DIR, 'data.bin')
     d = np.fromfile(path, dtype='int16')
