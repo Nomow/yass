@@ -54,11 +54,18 @@ def run(standarized_path, standarized_params, whiten_filter, if_file_exists,
         must be a yaml file with the number and size of the filters, the file
         should be named exactly as your model but with yaml extension
         see yass/src/assets/models/ for an example
+
+    triage:
+        Model name or path to triage network, if None it skips the triage
+        step
     """
     logger = logging.getLogger(__name__)
 
     detector = expand_asset_model(detector)
-    triage = expand_asset_model(triage)
+
+    if triage is not None:
+        triage = expand_asset_model(triage)
+
     autoencoder = expand_asset_model(autoencoder)
 
     CONFIG = read_config()
@@ -94,9 +101,12 @@ def run(standarized_path, standarized_params, whiten_filter, if_file_exists,
         # instantiate neural networks
         NND = NeuralNetDetector.load(detector, detector_threshold,
                                      CONFIG.channel_index)
-        triage = KerasModel(triage,
+
+        if triage is not None:
+            triage = KerasModel(triage,
                             allow_longer_waveform_length=True,
                             allow_more_channels=True)
+
         NNAE = AutoEncoder.load(autoencoder, input_tensor=NND.waveform_tf)
 
         neighbors = n_steps_neigh_channels(CONFIG.neigh_channels, 2)
@@ -120,8 +130,12 @@ def run(standarized_path, standarized_params, whiten_filter, if_file_exists,
         spikes_all = np.concatenate(spikes_all, axis=0)
         wfs = np.concatenate(wfs, axis=0)
 
-        idx_clean = triage.predict_with_threshold(x=wfs,
-                                                  threshold=triage_threshold)
+        if triage:
+            idx_clean = triage.predict_with_threshold(x=wfs,
+                            threshold=triage_threshold)
+        else:
+            idx_clean = np.ones(len(spikes_all)).astype(bool)
+
         score = NNAE.predict(wfs)
         rot = NNAE.load_rotation()
         neighbors = n_steps_neigh_channels(CONFIG.neigh_channels, 2)
