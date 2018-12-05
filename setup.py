@@ -38,7 +38,9 @@ INSTALL_REQUIRES = [
 INSTALL_REQUIRES = (INSTALL_REQUIRES_DOCS if os.environ.get('READTHEDOCS')
                     else INSTALL_REQUIRES)
 
-EXTRAS_REQUIRE = {'tensorflow': ['tensorflow']}
+# this will be installed when doing `pip install yass-algorithm[tf]`
+# or `pip install yass-algorithm[tf-gpu]
+EXTRAS_REQUIRE = {'tf': ['tensorflow'], 'tf-gpu': ['tensorflow-gpu']}
 
 here = os.path.abspath(os.path.dirname(__file__))
 

@@ -9,10 +9,9 @@ sudo: required
 install:
   - sudo apt-get install gfortran python-liblas libblas-dev liblapack-dev libatlas-dev
   - pip install --upgrade pip
-  - make install
+  - pip install .[tf]
 
 script:
-  - pip install tensorflow
   - make download-test-data
   - make test
   # - make integration-test

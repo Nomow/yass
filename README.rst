@@ -34,7 +34,17 @@ Installing the last stable version:
 
 .. code-block:: shell
 
-   pip install yass-algorithm
+   pip install yass-algorithm[tf]
+
+
+The above command will install yass and all its dependencies (including)
+tensorflow (CPU), for GPU do `pip install yass-algorithm[tf-gpu]`.
+
+If you have Tensorflow already installed, running `pip install yass-algorithm`
+will install yass and its dependencies except for Tensorflow. For more
+information regarding Tensorflow installation see `this`_.
+
+.. _this: https://www.tensorflow.org/install/pip
 
 
 If you are feeling adventurous, you can install from the master branch:
