@@ -38,9 +38,9 @@ Installing the last stable version:
 
 
 The above command will install yass and all its dependencies (including)
-tensorflow (CPU), for GPU do `pip install yass-algorithm[tf-gpu]`.
+tensorflow (CPU), for GPU do :code:`pip install yass-algorithm[tf-gpu]`.
 
-If you have Tensorflow already installed, running `pip install yass-algorithm`
+If you have Tensorflow already installed, running :code:`pip install yass-algorithm`
 will install yass and its dependencies except for Tensorflow. For more
 information regarding Tensorflow installation see `this`_.
 
