@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 """
-Script for creating new releases
+Script for creating new releases, usage:
+
+# create a new version (update version number, changelog, etc)
+./version new
+
+# make a new release by going to the tag TAG in the repo
+./version release TAG --production
 """
 import ast
 import re
@@ -147,7 +153,7 @@ class Versioner(object):
         replace_in_file('CHANGELOG.rst', start_current, start_new)
 
 
-@click.group()
+@click.group(help='Utility for making new releases')
 def cli():
     pass
 
@@ -198,21 +204,6 @@ def new():
 
     click.echo('Version {} was created, you are now in {}'
                .format(release, bumped_version))
-
-
-@cli.command(help='Merges changes in dev with master')
-def tomaster():
-    """
-    Merges dev with master and pushes
-    """
-    click.echo('Checking out master...')
-    call(['git', 'checkout', 'master'])
-
-    click.echo('Merging master with dev...')
-    call(['git', 'merge', 'dev'])
-
-    click.echo('Pushing changes...')
-    call(['git', 'push'])
 
 
 @cli.command(help='Publishes to PyPI')

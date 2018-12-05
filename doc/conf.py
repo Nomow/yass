@@ -45,7 +45,7 @@ extensions = [
 # mock dependencies
 # http://www.sphinx-doc.org/en/stable/ext/autodoc.html#confval-autodoc_mock_imports
 autodoc_mock_imports = ['numpy', 'scipy', 'sklearn', 'yaml', 'dateutil',
-                        'click', 'tqdm' 'tensorflow',  'progressbar',
+                        'click', 'tqdm', 'progressbar',
                         'matplotlib', 'keras', 'pathlib2', 'funcsigs',
                         'cerberus']
 
