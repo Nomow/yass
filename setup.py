@@ -36,7 +36,7 @@ INSTALL_REQUIRES = [
     'tqdm', 'multiprocess', 'coloredlogs', 'keras', 'cerberus',
     # from experimental pipeline (nnet and clustering)
     'parmap', 'statsmodels',
-] + INSTALL_REQUIRES_DOCS
+]
 
 # this will be installed when doing `pip install yass-algorithm[tf]`
 # or `pip install yass-algorithm[tf-gpu]
