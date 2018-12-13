@@ -441,10 +441,17 @@ class NeuralNetDetector(Model):
 
         return output
 
-    def predict(self, waveforms, sess):
+    def predict(self, waveforms, sess=None):
         """Predict classes (higher or equal than threshold)
         """
-        probas = self.predict_proba(sess, waveforms)
+
+        if sess is None:
+            with tf.Session() as sess:
+                self.restore(sess)
+                probas = self.predict_proba(sess, waveforms)
+        else:
+            probas = self.predict_proba(sess, waveforms)
+
         return (probas > self.threshold).astype('int')
 
     def fit(self, x_train, y_train, test_size=0.3, save_test_set=False):

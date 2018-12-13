@@ -9,16 +9,16 @@ import pytest
 import yaml
 
 import yass
-from yass.batch import BatchProcessor
+from yass.batch import BatchProcessor, RecordingsReader
 from yass import neuralnetwork
 from yass.neuralnetwork import NeuralNetDetector, KerasModel, AutoEncoder
 from yass.neuralnetwork.apply import post_processing
 from yass.geometry import make_channel_index, n_steps_neigh_channels
 from yass.augment import make
+from yass.augment.noise import noise_cov
 from yass.explore import RecordingExplorer
 
 
-@pytest.mark.xfail
 def test_can_train_detector(path_to_config,
                             path_to_sample_pipeline_folder,
                             make_tmp_folder):
@@ -26,11 +26,10 @@ def test_can_train_detector(path_to_config,
     CONFIG = yass.read_config()
 
     spike_train = np.load(path.join(path_to_sample_pipeline_folder,
-                                    'spike_train.npy'))
+                                    'spike_train_post_deconv_post_merge.npy'))
     chosen_templates = np.unique(spike_train[:, 1])
     min_amplitude = 4
     max_amplitude = 60
-    n_spikes_to_make = 100
 
     templates = make.load_templates(path_to_sample_pipeline_folder,
                                     spike_train, CONFIG, chosen_templates)
@@ -38,14 +37,23 @@ def test_can_train_detector(path_to_config,
     path_to_standarized = path.join(path_to_sample_pipeline_folder,
                                     'preprocess', 'standarized.bin')
 
-    (x_detect, y_detect,
-     x_triage, y_triage,
-     x_ae, y_ae) = make.training_data(CONFIG, templates,
-                                      min_amplitude, max_amplitude,
-                                      n_spikes_to_make,
-                                      path_to_standarized)
+    rec = RecordingsReader(path_to_standarized, loader='array').data
 
-    _, waveform_length, n_neighbors = x_detect.shape
+    (spatial_sig,
+     temporal_sig) = noise_cov(rec, templates.shape[1], templates.shape[1])
+
+    X, y = make.training_data_detect(templates=templates,
+                                     minimum_amplitude=min_amplitude,
+                                     maximum_amplitude=max_amplitude,
+                                     n_clean_per_template=20,
+                                     n_collided_per_spike=20,
+                                     n_temporally_misaligned_per_spike=0.25,
+                                     n_noise=20,
+                                     n_spatially_misaliged_per_spike=0,
+                                     spatial_SIG=spatial_sig,
+                                     temporal_SIG=temporal_sig)
+
+    _, waveform_length, n_neighbors = X.shape
 
     path_to_model = path.join(make_tmp_folder, 'detect-net.ckpt')
 
@@ -55,10 +63,9 @@ def test_can_train_detector(path_to_config,
                                  channel_index=CONFIG.channel_index,
                                  n_iter=10)
 
-    detector.fit(x_detect, y_detect)
+    detector.fit(X, y)
 
 
-@pytest.mark.xfail
 def test_can_reload_detector(path_to_config,
                              path_to_sample_pipeline_folder,
                              make_tmp_folder):
@@ -66,11 +73,10 @@ def test_can_reload_detector(path_to_config,
     CONFIG = yass.read_config()
 
     spike_train = np.load(path.join(path_to_sample_pipeline_folder,
-                                    'spike_train.npy'))
+                                    'spike_train_post_deconv_post_merge.npy'))
     chosen_templates = np.unique(spike_train[:, 1])
     min_amplitude = 4
     max_amplitude = 60
-    n_spikes_to_make = 100
 
     templates = make.load_templates(path_to_sample_pipeline_folder,
                                     spike_train, CONFIG, chosen_templates)
@@ -78,14 +84,23 @@ def test_can_reload_detector(path_to_config,
     path_to_standarized = path.join(path_to_sample_pipeline_folder,
                                     'preprocess', 'standarized.bin')
 
-    (x_detect, y_detect,
-     x_triage, y_triage,
-     x_ae, y_ae) = make.training_data(CONFIG, templates,
-                                      min_amplitude, max_amplitude,
-                                      n_spikes_to_make,
-                                      path_to_standarized)
+    rec = RecordingsReader(path_to_standarized, loader='array').data
 
-    _, waveform_length, n_neighbors = x_detect.shape
+    (spatial_sig,
+     temporal_sig) = noise_cov(rec, templates.shape[1], templates.shape[1])
+
+    X, y = make.training_data_detect(templates=templates,
+                                     minimum_amplitude=min_amplitude,
+                                     maximum_amplitude=max_amplitude,
+                                     n_clean_per_template=20,
+                                     n_collided_per_spike=20,
+                                     n_temporally_misaligned_per_spike=0.25,
+                                     n_noise=20,
+                                     n_spatially_misaliged_per_spike=0,
+                                     spatial_SIG=spatial_sig,
+                                     temporal_SIG=temporal_sig)
+
+    _, waveform_length, n_neighbors = X.shape
 
     path_to_model = path.join(make_tmp_folder, 'detect-net.ckpt')
 
@@ -95,7 +110,7 @@ def test_can_reload_detector(path_to_config,
                                  channel_index=CONFIG.channel_index,
                                  n_iter=10)
 
-    detector.fit(x_detect, y_detect)
+    detector.fit(X, y)
 
     NeuralNetDetector.load(path_to_model, threshold=0.5,
                            channel_index=CONFIG.channel_index)
