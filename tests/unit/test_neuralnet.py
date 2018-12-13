@@ -5,7 +5,6 @@ import os.path as path
 
 import numpy as np
 import tensorflow as tf
-import pytest
 import yaml
 
 import yass
@@ -16,7 +15,6 @@ from yass.neuralnetwork.apply import post_processing
 from yass.geometry import make_channel_index, n_steps_neigh_channels
 from yass.augment import make
 from yass.augment.noise import noise_cov
-from yass.explore import RecordingExplorer
 
 
 def test_can_train_detector(path_to_config,
@@ -116,7 +114,6 @@ def test_can_reload_detector(path_to_config,
                            channel_index=CONFIG.channel_index)
 
 
-@pytest.mark.xfail
 def test_can_use_detector_after_fit(path_to_config,
                                     path_to_sample_pipeline_folder,
                                     make_tmp_folder,
@@ -125,11 +122,10 @@ def test_can_use_detector_after_fit(path_to_config,
     CONFIG = yass.read_config()
 
     spike_train = np.load(path.join(path_to_sample_pipeline_folder,
-                                    'spike_train.npy'))
+                                    'spike_train_post_deconv_post_merge.npy'))
     chosen_templates = np.unique(spike_train[:, 1])
     min_amplitude = 4
     max_amplitude = 60
-    n_spikes_to_make = 100
 
     templates = make.load_templates(path_to_sample_pipeline_folder,
                                     spike_train, CONFIG, chosen_templates)
@@ -137,38 +133,41 @@ def test_can_use_detector_after_fit(path_to_config,
     path_to_standarized = path.join(path_to_sample_pipeline_folder,
                                     'preprocess', 'standarized.bin')
 
-    (x_detect, y_detect,
-     x_triage, y_triage,
-     x_ae, y_ae) = make.training_data(CONFIG, templates,
-                                      min_amplitude, max_amplitude,
-                                      n_spikes_to_make,
-                                      path_to_standarized)
+    rec = RecordingsReader(path_to_standarized, loader='array').data
 
-    _, waveform_length, n_neighbors = x_detect.shape
+    (spatial_sig,
+     temporal_sig) = noise_cov(rec, templates.shape[1], templates.shape[1])
+
+    X, y = make.training_data_detect(templates=templates,
+                                     minimum_amplitude=min_amplitude,
+                                     maximum_amplitude=max_amplitude,
+                                     n_clean_per_template=20,
+                                     n_collided_per_spike=20,
+                                     n_temporally_misaligned_per_spike=0.25,
+                                     n_noise=20,
+                                     n_spatially_misaliged_per_spike=0,
+                                     spatial_SIG=spatial_sig,
+                                     temporal_SIG=temporal_sig)
+
+    _, waveform_length, n_neighbors = X.shape
 
     path_to_model = path.join(make_tmp_folder, 'detect-net.ckpt')
+
     detector = NeuralNetDetector(path_to_model, [8, 4],
                                  waveform_length, n_neighbors,
                                  threshold=0.5,
                                  channel_index=CONFIG.channel_index,
                                  n_iter=10)
-    detector.fit(x_detect, y_detect)
 
-    data = RecordingExplorer(path_to_standarized_data).reader.data
+    detector.fit(X, y)
 
-    output_names = ('spike_index', 'waveform', 'probability')
-
-    (spike_index, waveform,
-        proba) = detector.predict_recording(data, output_names=output_names)
-
-    detector.predict(x_detect)
+    detector.predict(X)
 
 
-@pytest.mark.xfail
-def test_can_use_neural_network_detector(path_to_config,
-                                         path_to_sample_pipeline_folder,
-                                         make_tmp_folder,
-                                         path_to_standarized_data):
+def test_can_use_neural_networks(path_to_config,
+                                 path_to_sample_pipeline_folder,
+                                 make_tmp_folder,
+                                 path_to_standarized_data):
     yass.set_config(path_to_config, make_tmp_folder)
     CONFIG = yass.read_config()
 
@@ -229,7 +228,6 @@ def test_can_use_neural_network_detector(path_to_config,
                                                  neighbors)
 
 
-@pytest.mark.xfail
 def test_splitting_in_batches_does_not_affect(path_to_config,
                                               path_to_sample_pipeline_folder,
                                               make_tmp_folder,
