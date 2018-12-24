@@ -616,7 +616,7 @@ def _run_command(path, command):
     command_ = 'cd {path} && {cmd}'.format(path=quote(path), cmd=command)
 
     out = subprocess.check_output(command_, shell=True)
-    return out.decode('utf-8') .replace('\n', '')
+    return out.decode('utf-8').replace('\n', '')
 
 
 def one_line_git_summary(path):
@@ -634,7 +634,8 @@ def get_version():
     """
     installation_path = sys.modules['yass'].__file__
 
-    NON_EDITABLE = True if 'site-packages/' in installation_path else False
+    NON_EDITABLE = True if ('site-packages/' in installation_path or
+                            'dist-packages/' in installation_path) else False
 
     if NON_EDITABLE:
         return yass.__version__
