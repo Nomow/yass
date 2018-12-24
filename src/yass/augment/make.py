@@ -65,8 +65,8 @@ def training_data_triage(templates, minimum_amplitude, maximum_amplitude,
                                            n_clean_per_template,
                                            **from_templates_kwargs)
 
-    x_collision = util.make_collided(x_templates, n_collided_per_spike,
-                                     multi_channel=True,
+    x_collision = util.make_collided(x_templates, x_templates,
+                                     n_collided_per_spike,
                                      max_shift=max_shift,
                                      min_shift=min_shift,
                                      **collided_kwargs)
